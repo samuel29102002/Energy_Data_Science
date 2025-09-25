@@ -2,6 +2,7 @@
 
 **Course:** Energy Data Science
 **Project:** Home Energy Management System (HEMS) – Forecasting, Modeling, and Optimal Control
+**Repository:** *Energy_Data_Science*
 **Authors:** *Samuel Heinrich*
 **Student Code:** 
 
@@ -69,22 +70,34 @@ Energy_Data_Science/
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/<your-username>/its8080-hems.git
-cd its8080-hems
+git clone https://github.com/samuel29102002/Energy_Data_Science.git
+cd Energy_Data_Science
 ```
 
-### 2. Create the environment
+### 2. Create a Python virtual environment
 
 ```bash
-conda env create -f environment.yml
-conda activate its8080-hems
+python -m venv .venv
+source .venv/bin/activate  # On Windows use: .venv\\Scripts\\activate
+python -m pip install --upgrade pip
+pip install -r requirements.txt
 ```
 
-### 3. Run Jupyter Lab
+### 3. Activate the environment later
+
+```bash
+source .venv/bin/activate  # On Windows use: .venv\\Scripts\\activate
+```
+
+### 4. Run Jupyter Lab
 
 ```bash
 jupyter lab
 ```
+
+### 5. Add the course datasets
+
+Place the provided `train_test.csv`, `forecast.csv`, and `optimisation.csv` files inside `data/raw/`. Placeholder files are already tracked so you can overwrite them when the real data arrives.
 
 ---
 
@@ -136,8 +149,7 @@ Key outputs include:
 ## 🔗 Links
 
 - 📘 **Final Report PDF:** [Link to report](#)
-- 📂 **GitHub Repo:** [https://github.com/`<your-username>`/its8080-hems](https://github.com/<your-username>/its8080-hems)
-- 📓 **Notebooks (nbviewer):** [nbviewer link](#)
+- 📂 **GitHub Repo:** [Link to my GitHub](https://github.com/samuel29102002/Energy_Data_Science)
 
 ---
 
