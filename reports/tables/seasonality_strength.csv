@@ -1,0 +1,6 @@
+period,strength_type,value
+24h,Seasonal,0.242
+24h,Trend,0.107
+7d,Seasonal,0.221
+7d,Trend,0.448
+365d,Seasonal,1.0

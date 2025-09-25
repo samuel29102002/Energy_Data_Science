@@ -42,13 +42,14 @@ Energy_Data_Science/
   │   ├─ 01_visualization.ipynb
   │   ├─ 02_project_planning.ipynb
   │   ├─ 03_visualization.ipynb
-  │   ├─ 04_feature_engineering.ipynb
-  │   ├─ 05_ts_decomposition.ipynb
-  │   ├─ 06_stats_models_ARMA.ipynb
-  │   ├─ 07_ml_models.ipynb
-  │   ├─ 08_forecasting_pipeline.ipynb
-  │   ├─ 09_exogenous_models.ipynb
-  │   └─ 10_optim_storage.ipynb
+  │   ├─ 04_pv_cleaning.ipynb
+  │   ├─ 05_feature_engineering.ipynb
+  │   ├─ 06_ts_decomposition.ipynb
+  │   ├─ 07_stats_models_ARMA.ipynb
+  │   ├─ 08_ml_models.ipynb
+  │   ├─ 09_forecasting_pipeline.ipynb
+  │   ├─ 10_exogenous_models.ipynb
+  │   └─ 11_optim_storage.ipynb
   ├─ src/                     # Modular reusable code
   │   ├─ config.py
   │   ├─ data_io.py
@@ -120,28 +121,31 @@ Place the provided `train_252145.csv`, `forecast.csv`, and `optimisation.csv` fi
 
 - Run `01_visualization.ipynb` to profile PV generation, demand, and price for Task 1.
 - Use `02_project_planning.ipynb` for the lifecycle diagram (outputs in `reports/figures/`).
-- Explore Task 3 visuals in `03_visualization.ipynb`; artefacts are written to `reports/figures/` and `reports/tables/`.
+- Explore Task 3 visuals in `03_visualization.ipynb`; artefacts land in `reports/figures/` and `reports/tables/`.
 - Interactive Plotly exports for the dashboard are stored under `reports/figures/interactive/`.
 
-### Feature Engineering & Decomposition
+### PV Cleaning & Feature Prep
 
-- Use `04_feature_engineering.ipynb` and `05_ts_decomposition.ipynb`.
+- Execute `04_pv_cleaning.ipynb` to audit PV sensor gaps and compare imputation strategies; figures/tables feed the report and dashboard.
+- Use `05_feature_engineering.ipynb` and `06_ts_decomposition.ipynb` for derived features and decomposition analysis.
 
 ### Modeling
 
-- Statistical ARMA-family models: `06_stats_models_ARMA.ipynb`
-- Machine Learning model: `07_ml_models.ipynb`
+- Statistical ARMA-family models: `07_stats_models_ARMA.ipynb`
+- Machine Learning model: `08_ml_models.ipynb`
 
-- Rolling 7-day forecasts on `forecast.csv`: `08_forecasting_pipeline.ipynb`
+### Forecasting
+
+- Rolling 7-day forecasts on `forecast.csv`: `09_forecasting_pipeline.ipynb`
 - Includes naive baselines and comparisons.
 
 ### Exogenous Models
 
-- Enhanced models with exogenous features: `09_exogenous_models.ipynb`
+- Enhanced models with exogenous features: `10_exogenous_models.ipynb`
 
 ### Optimization
 
-- Battery storage optimization: `10_optim_storage.ipynb`
+- Battery storage optimization: `11_optim_storage.ipynb`
 - Compares PV_low vs PV_high cases.
 
 ### Dash App
@@ -152,7 +156,7 @@ Place the provided `train_252145.csv`, `forecast.csv`, and `optimisation.csv` fi
 python src/dash_app/app.py
 ```
 
-- Open the printed URL (default `http://127.0.0.1:8050`). The **Overview** tab tracks key metrics, while the **Visualisation Studio** tab provides interactive plot selection (timeseries, distributions, boxplots, heatmaps, profiles) using the same energy-themed style as the exported notebooks.
+- Open the printed URL (default `http://127.0.0.1:8050`). The **Overview** tab tracks key metrics, the **Visualisation Studio** tab provides interactive plot selection (timeseries, distributions, boxplots, heatmaps, profiles), and the **PV Cleaning** tab compares imputation strategies with live overlays and summary tables.
 
 ---
 

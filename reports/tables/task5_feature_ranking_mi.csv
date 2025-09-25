@@ -1,0 +1,16 @@
+,mutual_information
+hour_cos,0.1339
+hour_sin,0.1095
+heating_degree,0.0895
+Temperature,0.0815
+Cloud_cover (%),0.0674
+Pressure (hPa),0.052
+direct_radiation (W/m²),0.0441
+diffuse_radiation (W/m²),0.0341
+Shortwave_radiation (W/m²),0.0316
+Price,0.0224
+direct_normal_irradiance (W/m²),0.0147
+cooling_degree,0.0074
+temp_irradiance_interaction,0.0029
+Wind_speed_10m (km/h),0.0009
+is_weekend,0.0

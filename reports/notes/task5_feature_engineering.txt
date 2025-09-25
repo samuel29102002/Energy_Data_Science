@@ -1,0 +1,5 @@
+Task 5 – Feature Engineering Notes
+- Descriptive statistics for demand and weather drivers (mean, std, min, max, skewness, kurtosis) saved to `reports/tables/task5_descriptive_stats.csv`.
+- Histograms and Q-Q plots confirm non-normal demand and irradiance distributions; Yeo-Johnson transforms improve symmetry (see `task5_fig_Demand_transformed.*`, `task5_fig_Shortwave_radiation_(W_m²)_transformed.*`).
+- Engineered features include cyclical hour encodings, weekend flag, degree-days, and a temperature–irradiance interaction. Processed dataset saved to `data/processed/task5_features.parquet`.
+- Feature ranking (mutual information & permutation) stored in `task5_feature_ranking_*.csv`; top predictors reflect time-of-day structure and solar/weather signals, aligning with HEMS operations.

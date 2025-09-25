@@ -1,0 +1,16 @@
+,permutation
+hour_sin,0.5155
+Price,0.3079
+hour_cos,0.2935
+Pressure (hPa),0.2574
+heating_degree,0.1618
+Wind_speed_10m (km/h),0.158
+Temperature,0.1327
+Cloud_cover (%),0.0972
+direct_normal_irradiance (W/m²),0.0776
+temp_irradiance_interaction,0.0647
+diffuse_radiation (W/m²),0.0639
+Shortwave_radiation (W/m²),0.0438
+direct_radiation (W/m²),0.0377
+is_weekend,0.0117
+cooling_degree,0.0064
