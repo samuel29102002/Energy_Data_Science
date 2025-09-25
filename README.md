@@ -2,8 +2,8 @@
 
 **Course:** Energy Data Science
 **Project:** Home Energy Management System (HEMS) – Forecasting, Modeling, and Optimal Control
-**Authors:** *[Your Name(s)]*
-**Student Code(s):** *[Insert Student Code(s)]*
+**Authors:** *Samuel Heinrich*
+**Student Code:** 
 
 ---
 
@@ -21,20 +21,18 @@ This project develops a complete energy data science pipeline for a **Home Energ
 8. Exogenous models using engineered features
 9. Optimal 24h storage control under PV_low and PV_high scenarios
 
-The outputs are:
+The results will be:
 
 - 📄 A **report (≤25 pages)** with figures, tables, and clear explanations
-- 📂 A **GitHub repository** with reproducible code and notebooks
-- 🔗 A **nbviewer link** for easy access to the Jupyter notebooks
+- 📂 This **GitHub repository** with reproducible code and notebooks
 
 ---
 
 ## 📂 Repository Structure
 
 ```
-its8080-hems/
-  ├─ README.md                # Project overview (this file)
-  ├─ environment.yml          # Conda environment with dependencies
+Energy_Data_Science/
+  ├─ README.md                # Project overview
   ├─ data/
   │   ├─ raw/                 # train_test.csv, forecast.csv, optimisation.csv
   │   ├─ interim/             # intermediate results
