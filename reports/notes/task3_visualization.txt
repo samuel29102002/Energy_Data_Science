@@ -1,0 +1,19 @@
+Task 3 – Visualisation Insights
+- The 1–7 Aug 2013 overlay (`task3_fig1_timeseries_overlay.png`) shows PV peaking around noon while demand crests after 18:00, confirming that storage or load shifting is required to absorb surplus solar and cover evening imports.
+- Demand and PV histograms with KDE (`task3_fig2_distributions.png`) reveal highly skewed PV output (75% of hours below 0.82 kW) versus a tighter demand band, informing realistic state-of-charge bounds for optimisation.
+- Hourly demand boxplots (`task3_fig3_hourly_boxplot.png`) highlight the 18:00–21:00 risk window where variability and peak probability are greatest; this guides battery discharge scheduling and tariff-aware demand response.
+- Correlation heatmap (`task3_fig4_correlation_heatmap.png`) confirms shortwave irradiance as the dominant PV driver (ρ = 0.68) and limited linear linkage between demand and weather, justifying separate modelling strategies for generation and load.
+- Typical hourly profiles (`task3_fig5_typical_profiles.png`) contrast weekday versus weekend behaviour: weekday evening demand is ~0.15 kW higher while weekend PV availability is slightly elevated, supporting differentiated HEMS control policies.
+
+Most Informative Visualisation
+- The typical hourly profiles are the most actionable for HEMS decisions because they simultaneously expose PV-demand misalignment and quantify how patterns change across the week. This directly informs storage dispatch, EV charging, and appliance scheduling strategies aimed at maximising self-consumption.
+
+Recommended Plots for the Report
+1. Two-week timeseries overlay (operational story).
+2. Demand/PV distributions (system sizing and forecasting targets).
+3. Hourly demand boxplots (peak-shaving priorities).
+4. Correlation heatmap (feature engineering guidance).
+5. Typical hourly profiles (control and scheduling insight).
+
+Data Source
+- All figures are derived from `data/raw/train_252145.csv` (July 2013 – June 2014).

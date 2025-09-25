@@ -1,0 +1,24 @@
+Task 1 – Quantitative Highlights
+- Dataset covers 8,759 hourly observations (Jul 2013 – Jun 2014) with no gaps in `pv`, `Demand`, or `Price`.
+- Mean household demand = 0.531 kW (σ = 0.375); peak demand = 4.24 kW.
+- Mean PV export = 0.660 kW (σ = 1.106); peak PV = 4.81 kW.
+- Mean electricity price = €0.046 per kWh (σ = €0.025); max observed price = €0.255 per kWh.
+- PV sensor completeness: `pv_mod1` missing 438 samples (5.0%), `pv_mod2` 491 (5.6%), `pv_mod3` 510 (5.8%); fused `pv` channel is complete.
+- First-week PV yield ranges 7.67–34.27 kWh per day, while demand spans 9.15–13.08 kWh per day; average price over the week remains €0.021–€0.042 per kWh.
+
+Task 1 – Research Notes
+- Digitalisation enables sub-hourly telemetry, cloud analytics, and automated control that raise self-consumption and flexibility revenues for residential prosumers. Empirical studies highlight that algorithmic scheduling of batteries and smart appliances can trim household energy costs by 10–25% while supporting grid services [1][2].
+- Accurate solar resource analytics underpin PV asset sizing, reliability guarantees, and participation in flexibility markets. Forecast ensembles reduce day-ahead PV error by 15–30%, improving dispatch planning for aggregators and DSOs [3][4].
+- For private homeowners, pairing PV analytics with retail tariff intelligence justifies investments in storage (10 kWh battery covers 95th percentile demand peak) and EV charging coordination. For service providers, high-fidelity PV forecasts feed virtual power plant bidding, demand response portfolios, and inverter O&M diagnostics.
+
+Task 2 – Planning Highlights
+- Highest effort phases: (i) PV sensor reconciliation and timestamp alignment, (ii) feature engineering of weather-derived and calendar predictors, (iii) rolling evaluation of statistical and machine-learning demand models.
+- Moderate effort: benchmarking models, validating walk-forward forecasts, and integrating optimisation constraints for the EMS storage module.
+- Lower effort (once analytics mature): packaging findings for Nbviewer, updating dashboards, and drafting the final report.
+- Optional external data: short-term weather forecasts or richer tariff metadata can be ingested later but are not mandatory for baseline completion.
+
+References
+[1] International Energy Agency. "Digitalization and Energy." Paris, 2017.
+[2] European Commission. "Digitalising the Energy System – EU Action Plan." Brussels, 2022.
+[3] National Renewable Energy Laboratory. "Solar Forecasting 2: Advancements in Solar Power Forecasting." Golden, CO, 2020.
+[4] International Renewable Energy Agency. "Innovation Landscape for a Renewable-Powered Future." Abu Dhabi, 2019.

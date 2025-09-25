@@ -1,0 +1,25 @@
+body {
+  background-color: #f3f5f9;
+}
+
+.nav-tabs .nav-link {
+  font-weight: 600;
+  color: #495057;
+}
+
+.nav-tabs .nav-link.active {
+  color: #0d6efd;
+  border-color: #dee2e6 #dee2e6 #fff;
+}
+
+div#viz-graph, div#timeseries-chart, div#correlation-heatmap, div#pv-demand-scatter, div#hourly-heatmap {
+  border: 1px solid #dee2e6;
+  border-radius: 0.75rem;
+  padding: 0.75rem;
+  background-color: #ffffff;
+  box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.05);
+}
+
+.dash-debug-menu {
+  display: none;
+}
