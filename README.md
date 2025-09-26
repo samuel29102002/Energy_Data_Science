@@ -45,6 +45,7 @@ Energy_Data_Science/
   │   ├─ 04_pv_cleaning.ipynb
   │   ├─ 05_feature_engineering.ipynb
   │   ├─ 06_ts_decomposition.ipynb
+  │   ├─ 06_ml_models.ipynb
   │   ├─ 07_stats_models_ARMA.ipynb
   │   ├─ 08_ml_models.ipynb
   │   ├─ 09_forecasting_pipeline.ipynb
@@ -57,6 +58,7 @@ Energy_Data_Science/
   │   ├─ features.py
   │   ├─ modeling_stats.py
   │   ├─ modeling_ml.py
+  │   ├─ plotting.py
   │   ├─ forecasting.py
   │   └─ optimize_battery.py
   ├─ reports/
@@ -96,6 +98,8 @@ conda install --file requirements.txt
 # or, inside the environment:
 pip install -r requirements.txt
 ```
+
+> **macOS note:** XGBoost requires the OpenMP runtime. Install it once with `brew install libomp` before running the notebooks or Dash app.
 
 ### 4. (Optional) expose the kernel to Jupyter
 
@@ -156,7 +160,7 @@ Place the provided `train_252145.csv`, `forecast.csv`, and `optimisation.csv` fi
 python src/dash_app/app.py
 ```
 
-- Open the printed URL (default `http://127.0.0.1:8050`). The **Overview** tab tracks key metrics, the **Visualisation Studio** tab provides interactive plot selection (timeseries, distributions, boxplots, heatmaps, profiles), and the **PV Cleaning** tab compares imputation strategies with live overlays and summary tables.
+- Open the printed URL (default `http://127.0.0.1:8050`). The **Overview** tab tracks key metrics, the **Visualisation Studio** tab provides interactive plot selection (timeseries, distributions, boxplots, heatmaps, profiles), the **Decomposition** tab shows STL components and typical profiles with seasonality strengths, the **PV Cleaning** tab compares imputation strategies with live overlays and summary tables, and the **Features** tab surfaces ranking tables and distributions on demand.
 
 ---
 
@@ -166,7 +170,10 @@ Key outputs include:
 
 - Data cleaning comparison (PV_mod1 with 3 methods)
 - Feature importance rankings
-- Demand decomposition (trend, seasonality, residual)
+- Demand decomposition (trend, seasonality, residual) with typical weekday/weekend and monthly profiles
+- ARIMA/SARIMA demand forecasts with whole-split and walk-forward evaluation metrics
+- XGBoost demand forecasts with feature importance diagnostics and stat-model comparison
+- Rolling 7-day forecast pipeline comparing ML, statistical, and naive baselines
 - ARMA vs ML forecasting performance (normalized RMSE, MAE)
 - Exogenous vs autoregressive models
 - Optimal storage control decisions for 24h horizon

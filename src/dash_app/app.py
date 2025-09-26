@@ -30,7 +30,24 @@ from src.plotting import (
     plot_stl_components,
     plot_typical_profiles_weekday_weekend,
     plot_typical_profiles_monthly,
+    plot_acf_pacf,
+    plot_forecast_overlay,
+    plot_walkforward_panels,
+    plot_metrics_bar,
+    plot_feature_importance,
+    plot_forecast_overlay_multimodel,
+    plot_metrics_comparison,
+    plot_learning_curve,
 )
+from src.modeling_stats import acf_pacf
+try:
+    from src.forecasting import FEATURE_COLUMNS
+except Exception as exc:  # pragma: no cover
+    FEATURE_COLUMNS = []
+    print(
+        "⚠️ Forecasting module could not be loaded (XGBoost missing). Install libomp via: brew install libomp. Error:",
+        exc,
+    )
 
 # Load and enrich the dataset once at startup.
 df = pd.read_csv(DATA_PATH, parse_dates=["timestamp"]).sort_values("timestamp")
@@ -184,6 +201,104 @@ DECOMPOSITION_PERIOD_FILTER = {
 
 DEMAND_SERIES = hourly_demand_series
 
+# Statistical modeling artefacts
+STAT_MODEL_CONFIGS = {
+    "ARIMA(2,1,2)": {"order": (2, 1, 2), "seasonal_order": (0, 0, 0, 0)},
+    "SARIMA(1,1,1)(1,1,1,24)": {"order": (1, 1, 1), "seasonal_order": (1, 1, 1, 24)},
+    "SARIMA(2,1,1)(0,1,1,24)": {"order": (2, 1, 1), "seasonal_order": (0, 1, 1, 24)},
+}
+STAT_MODEL_OPTIONS = [
+    {"label": name, "value": name}
+    for name in STAT_MODEL_CONFIGS
+]
+
+
+def _difference_for_acf(series: pd.Series, order: tuple[int, int, int], seasonal_order: tuple[int, int, int, int]) -> pd.Series:
+    diffed = series.copy()
+    d = order[1]
+    if d > 0:
+        diffed = diffed.diff(d)
+    D = seasonal_order[1]
+    s = seasonal_order[3]
+    if D > 0 and s > 0:
+        for _ in range(D):
+            diffed = diffed - diffed.shift(s)
+    return diffed.dropna()
+
+
+STAT_MODEL_ACF = {}
+for name, cfg in STAT_MODEL_CONFIGS.items():
+    diffed_series = _difference_for_acf(DEMAND_SERIES, cfg["order"], cfg["seasonal_order"])
+    try:
+        STAT_MODEL_ACF[name] = acf_pacf(diffed_series, nlags=72)
+    except Exception:
+        STAT_MODEL_ACF[name] = {"acf": pd.DataFrame(columns=["lag", "value"]), "pacf": pd.DataFrame(columns=["lag", "value"])}
+
+
+def _safe_read_csv(path: Path, parse_dates: list[str] | None = None) -> pd.DataFrame:
+    try:
+        return pd.read_csv(path, parse_dates=parse_dates)
+    except FileNotFoundError:
+        return pd.DataFrame()
+
+
+model_metrics_path = ROOT / "reports" / "tables" / "model_candidates_metrics.csv"
+walkforward_summary_path = ROOT / "reports" / "tables" / "walkforward_metrics_summary.csv"
+walkforward_metrics_path = ROOT / "reports" / "tables" / "walkforward_per_day_metrics.csv"
+single_split_predictions_path = ROOT / "reports" / "tables" / "stats_single_split_predictions.csv"
+walkforward_predictions_path = ROOT / "reports" / "tables" / "walkforward_predictions.csv"
+ml_split_metrics_path = ROOT / "reports" / "tables" / "ml_split_metrics.csv"
+ml_walkforward_metrics_path = ROOT / "reports" / "tables" / "ml_walkforward_per_day_metrics.csv"
+ml_walkforward_predictions_path = ROOT / "reports" / "tables" / "ml_walkforward_predictions.csv"
+ml_feature_importance_path = ROOT / "reports" / "tables" / "ml_feature_importance.csv"
+ml_learning_curve_path = ROOT / "reports" / "tables" / "ml_learning_curve.csv"
+ml_split_predictions_path = ROOT / "reports" / "tables" / "ml_split_predictions.csv"
+best_stat_vs_ml_metrics_path = ROOT / "reports" / "tables" / "best_stat_vs_ml_metrics.csv"
+forecast_predictions_path = ROOT / "reports" / "tables" / "forecast_predictions.csv"
+forecast_metrics_day_path = ROOT / "reports" / "tables" / "forecast_metrics_per_day.csv"
+forecast_metrics_summary_path = ROOT / "reports" / "tables" / "forecast_metrics_summary.csv"
+
+model_metrics_df = _safe_read_csv(model_metrics_path)
+walkforward_summary_df = _safe_read_csv(walkforward_summary_path)
+walkforward_metrics_df = _safe_read_csv(walkforward_metrics_path)
+single_split_predictions_df = _safe_read_csv(single_split_predictions_path, parse_dates=["timestamp"])
+walkforward_predictions_df = _safe_read_csv(walkforward_predictions_path, parse_dates=["timestamp"])
+ml_split_metrics_df = _safe_read_csv(ml_split_metrics_path)
+ml_walkforward_metrics_df = _safe_read_csv(ml_walkforward_metrics_path)
+ml_walkforward_predictions_df = _safe_read_csv(ml_walkforward_predictions_path, parse_dates=["timestamp"])
+ml_feature_importance_df = _safe_read_csv(ml_feature_importance_path)
+ml_learning_curve_df = _safe_read_csv(ml_learning_curve_path)
+ml_split_predictions_df = _safe_read_csv(ml_split_predictions_path, parse_dates=["timestamp"])
+best_stat_vs_ml_metrics_df = _safe_read_csv(best_stat_vs_ml_metrics_path)
+forecast_predictions_df = _safe_read_csv(forecast_predictions_path, parse_dates=["timestamp"])
+forecast_metrics_day_df = _safe_read_csv(forecast_metrics_day_path)
+forecast_metrics_summary_df = _safe_read_csv(forecast_metrics_summary_path)
+
+if not walkforward_summary_df.empty and "evaluation" not in walkforward_summary_df.columns:
+    walkforward_summary_df["evaluation"] = "Walk-forward mean"
+
+STAT_MODEL_METRICS = pd.concat([model_metrics_df, walkforward_summary_df], ignore_index=True, sort=False)
+if "evaluation" not in STAT_MODEL_METRICS.columns:
+    STAT_MODEL_METRICS["evaluation"] = "Whole-train split"
+
+STAT_WALKFORWARD_METRICS = walkforward_metrics_df
+STAT_SINGLE_SPLIT_PREDICTIONS = single_split_predictions_df
+STAT_WALKFORWARD_PREDICTIONS = walkforward_predictions_df
+ML_SPLIT_METRICS = ml_split_metrics_df
+ML_WALKFORWARD_METRICS = ml_walkforward_metrics_df
+ML_WALKFORWARD_PREDICTIONS = ml_walkforward_predictions_df
+ML_FEATURE_IMPORTANCE = ml_feature_importance_df
+ML_LEARNING_CURVE = ml_learning_curve_df
+ML_SPLIT_PREDICTIONS = ml_split_predictions_df
+BEST_STAT_VS_ML = best_stat_vs_ml_metrics_df
+BEST_STAT_MODEL = (
+    model_metrics_df.sort_values("nRMSE").iloc[0]["model_name"]
+    if not model_metrics_df.empty and "nRMSE" in model_metrics_df.columns
+    else None
+)
+FORECAST_PREDICTIONS = forecast_predictions_df
+FORECAST_METRICS_DAY = forecast_metrics_day_df
+FORECAST_METRICS_SUMMARY = forecast_metrics_summary_df
 # Pre-compute PV_mod1 imputations for cleaning tab.
 pv_mod1 = df["pv_mod1"]
 pv_simple = pv_mod1.interpolate(method="time")
@@ -295,6 +410,18 @@ def _self_check() -> None:
         window = coerce_numeric(pv_imputed[['original', 'simple', 'univariate', 'multivariate']]).iloc[: 24 * 7]
         if window.dropna(how='all').empty:
             raise ValueError("PV imputation sample window is empty")
+        if not STAT_MODEL_METRICS.empty:
+            for metric_col in ["MAE", "RMSE", "nRMSE"]:
+                if metric_col in STAT_MODEL_METRICS.columns:
+                    values = pd.to_numeric(STAT_MODEL_METRICS[metric_col], errors='coerce')
+                    if values.dropna().empty:
+                        raise ValueError(f"Stat model metric '{metric_col}' missing values")
+        if not STAT_WALKFORWARD_PREDICTIONS.empty:
+            cols = {"timestamp", "y_true", "y_pred"}
+            if not cols.issubset(STAT_WALKFORWARD_PREDICTIONS.columns):
+                raise ValueError("Walk-forward predictions lack required columns")
+        if not FORECAST_METRICS_SUMMARY.empty and "nRMSE_mean" not in FORECAST_METRICS_SUMMARY.columns:
+            raise ValueError("Forecast metrics summary missing expected columns")
     except Exception as exc:  # pragma: no cover - logging only
         print(f"Dash app self-check warning: {exc}")
 
@@ -717,6 +844,325 @@ features_layout = [
     ),
 ]
 
+
+stat_models_layout = [
+    dbc.Row(
+        [
+            dbc.Col(
+                [
+                    html.H5("Statistical Models", className="fw-semibold mb-3"),
+                    dbc.Label("Model"),
+                    dcc.Dropdown(
+                        id="stat-model-dropdown",
+                        options=STAT_MODEL_OPTIONS,
+                        value=STAT_MODEL_OPTIONS[0]["value"] if STAT_MODEL_OPTIONS else None,
+                        clearable=False,
+                        className="mb-3",
+                    ),
+                    dbc.Label("Evaluation view"),
+                    dcc.RadioItems(
+                        id="stat-eval-radio",
+                        options=[
+                            {"label": "Whole-train split", "value": "split"},
+                            {"label": "Last-week walk-forward", "value": "walk"},
+                        ],
+                        value="split",
+                        className="mb-3",
+                    ),
+                    dbc.Label("Walk-forward day"),
+                    dcc.Dropdown(
+                        id="stat-day-dropdown",
+                        options=[],
+                        value=None,
+                        clearable=False,
+                        disabled=True,
+                        className="mb-3",
+                    ),
+                    dbc.Alert(
+                        "Select a model and evaluation mode to inspect residual correlation, forecasts, and error statistics.",
+                        color="secondary",
+                        className="mt-2",
+                    ),
+                ],
+                md=3,
+                style=sidebar_style,
+            ),
+            dbc.Col(
+                [
+                    dcc.Graph(id="stat-acf-figure", config={"displayModeBar": True, "displaylogo": False}),
+                    dcc.Graph(id="stat-forecast-figure", config={"displayModeBar": True, "displaylogo": False}, className="mt-4"),
+                    html.Div(
+                        dash_table.DataTable(
+                            id="stat-metrics-table",
+                            columns=[
+                                {"name": "Model", "id": "model_name"},
+                                {"name": "MAE", "id": "MAE"},
+                                {"name": "RMSE", "id": "RMSE"},
+                                {"name": "nRMSE", "id": "nRMSE"},
+                            ],
+                            data=[],
+                            style_as_list_view=True,
+                            style_table={
+                                "overflowX": "auto",
+                                "border": "1px solid #e6e6e6",
+                                "borderRadius": "8px",
+                            },
+                            style_header={
+                                "backgroundColor": "#F7F9FB",
+                                "fontWeight": "600",
+                                "borderBottom": "1px solid #d9d9d9",
+                            },
+                            style_cell={
+                                "padding": "8px",
+                                "fontFamily": "Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial",
+                                "fontSize": 13,
+                                "textAlign": "center",
+                            },
+                            style_data_conditional=[
+                                {"if": {"row_index": "odd"}, "backgroundColor": "rgba(0,0,0,0.02)"},
+                            ],
+                            page_size=10,
+                            fill_width=True,
+                            export_format="csv",
+                            export_headers="display",
+                        ),
+                        className="mt-4",
+                    ),
+                    html.Div(
+                        dash_table.DataTable(
+                            id="stat-daily-table",
+                            columns=[
+                                {"name": "Day", "id": "day_idx"},
+                                {"name": "MAE", "id": "MAE"},
+                                {"name": "RMSE", "id": "RMSE"},
+                                {"name": "nRMSE", "id": "nRMSE"},
+                            ],
+                            data=[],
+                            style_as_list_view=True,
+                            style_table={
+                                "overflowX": "auto",
+                                "border": "1px solid #e6e6e6",
+                                "borderRadius": "8px",
+                            },
+                            style_header={
+                                "backgroundColor": "#F7F9FB",
+                                "fontWeight": "600",
+                                "borderBottom": "1px solid #d9d9d9",
+                            },
+                            style_cell={
+                                "padding": "8px",
+                                "fontFamily": "Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial",
+                                "fontSize": 13,
+                                "textAlign": "center",
+                            },
+                            style_data_conditional=[
+                                {"if": {"row_index": "odd"}, "backgroundColor": "rgba(0,0,0,0.02)"},
+                            ],
+                            page_size=7,
+                            fill_width=True,
+                            export_format="csv",
+                            export_headers="display",
+                        ),
+                        className="mt-3",
+                    ),
+                ],
+                md=9,
+            ),
+        ],
+        className="gy-4",
+    ),
+]
+
+
+ml_models_layout = [
+    dbc.Row(
+        [
+            dbc.Col(
+                [
+                    html.H5("ML Models", className="fw-semibold mb-3"),
+                    dbc.Label("Model"),
+                    dcc.Dropdown(
+                        id="ml-model-dropdown",
+                        options=[
+                            {"label": "XGBoost", "value": "xgb"},
+                            {"label": "LSTM", "value": "lstm", "disabled": True},
+                        ],
+                        value="xgb",
+                        clearable=False,
+                        className="mb-3",
+                    ),
+                    dbc.Label("Evaluation"),
+                    dcc.RadioItems(
+                        id="ml-eval-radio",
+                        options=[
+                            {"label": "Whole-train split", "value": "split"},
+                            {"label": "Last-week walk-forward", "value": "walk"},
+                        ],
+                        value="walk",
+                        className="mb-3",
+                    ),
+                    dbc.Label("Walk-forward day"),
+                    dcc.Dropdown(
+                        id="ml-day-dropdown",
+                        options=[],
+                        value=None,
+                        clearable=False,
+                        disabled=True,
+                        className="mb-3",
+                    ),
+                    dbc.Checklist(
+                        id="ml-show-importance",
+                        options=[{"label": "Show feature importance", "value": "importance"}],
+                        value=["importance"],
+                        switch=True,
+                        className="mb-3",
+                    ),
+                ],
+                md=3,
+                style=sidebar_style,
+            ),
+            dbc.Col(
+                [
+                    dcc.Graph(id="ml-forecast-figure", config={"displayModeBar": True, "displaylogo": False}),
+                    dcc.Graph(id="ml-metrics-figure", config={"displayModeBar": True, "displaylogo": False}, className="mt-4"),
+                    dcc.Graph(id="ml-extra-figure", config={"displayModeBar": True, "displaylogo": False}, className="mt-4"),
+                    html.Div(
+                        dash_table.DataTable(
+                            id="ml-comparison-table",
+                            columns=[
+                                {"name": "Model", "id": "model"},
+                                {"name": "Evaluation", "id": "evaluation"},
+                                {"name": "MAE", "id": "MAE"},
+                                {"name": "RMSE", "id": "RMSE"},
+                                {"name": "nRMSE", "id": "nRMSE"},
+                            ],
+                            data=[],
+                            style_as_list_view=True,
+                            style_table={
+                                "overflowX": "auto",
+                                "border": "1px solid #e6e6e6",
+                                "borderRadius": "8px",
+                            },
+                            style_header={
+                                "backgroundColor": "#F7F9FB",
+                                "fontWeight": "600",
+                                "borderBottom": "1px solid #d9d9d9",
+                            },
+                            style_cell={
+                                "padding": "8px",
+                                "fontFamily": "Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial",
+                                "fontSize": 13,
+                                "textAlign": "center",
+                            },
+                            style_data_conditional=[
+                                {"if": {"row_index": "odd"}, "backgroundColor": "rgba(0,0,0,0.02)"},
+                            ],
+                            page_size=10,
+                            fill_width=True,
+                            export_format="csv",
+                            export_headers="display",
+                        ),
+                        className="mt-4",
+                    ),
+                ],
+                md=9,
+            ),
+        ],
+        className="gy-4",
+    ),
+]
+
+
+forecasting_layout = [
+    dbc.Row(
+        [
+            dbc.Col(
+                [
+                    html.H5("Forecasting Controls", className="fw-semibold mb-3"),
+                    dbc.Label("Model view"),
+                    dcc.RadioItems(
+                        id="forecast-model-radio",
+                        options=[
+                            {"label": "Best ML", "value": "XGBoost"},
+                            {"label": "Best Stat", "value": BEST_STAT_MODEL or "Statistical"},
+                            {"label": "Naive", "value": "Naive"},
+                            {"label": "Seasonal Naive", "value": "SeasonalNaive"},
+                            {"label": "All", "value": "ALL"},
+                        ],
+                        value="ALL",
+                        className="mb-3",
+                    ),
+                    dbc.Label("Day"),
+                    dcc.Dropdown(
+                        id="forecast-day-dropdown",
+                        options=[{"label": f"Day {i}", "value": i} for i in sorted(FORECAST_PREDICTIONS["day_idx"].unique())] if not FORECAST_PREDICTIONS.empty else [],
+                        value=int(FORECAST_PREDICTIONS["day_idx"].min()) if not FORECAST_PREDICTIONS.empty else None,
+                        clearable=False,
+                        className="mb-3",
+                    ),
+                    dbc.Checklist(
+                        id="forecast-show-summary",
+                        options=[{"label": "Show metrics summary table", "value": "summary"}],
+                        value=["summary"],
+                        switch=True,
+                    ),
+                    html.Small("nRMSE = RMSE / (max(y_true) - min(y_true))", className="text-muted"),
+                ],
+                md=3,
+                style=sidebar_style,
+            ),
+            dbc.Col(
+                [
+                    dcc.Graph(id="forecast-day-figure", config={"displayModeBar": True, "displaylogo": False}),
+                    dcc.Graph(id="forecast-week-figure", config={"displayModeBar": True, "displaylogo": False}, className="mt-4"),
+                    html.Div(
+                        dash_table.DataTable(
+                            id="forecast-metrics-table",
+                            columns=[
+                                {"name": "Model", "id": "model_name"},
+                                {"name": "MAE_mean", "id": "MAE_mean"},
+                                {"name": "RMSE_mean", "id": "RMSE_mean"},
+                                {"name": "nRMSE_mean", "id": "nRMSE_mean"},
+                                {"name": "MAE_std", "id": "MAE_std"},
+                                {"name": "RMSE_std", "id": "RMSE_std"},
+                                {"name": "nRMSE_std", "id": "nRMSE_std"},
+                            ],
+                            data=[],
+                            style_as_list_view=True,
+                            style_table={
+                                "overflowX": "auto",
+                                "border": "1px solid #e6e6e6",
+                                "borderRadius": "8px",
+                            },
+                            style_header={
+                                "backgroundColor": "#F7F9FB",
+                                "fontWeight": "600",
+                                "borderBottom": "1px solid #d9d9d9",
+                            },
+                            style_cell={
+                                "padding": "8px",
+                                "fontFamily": "Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial",
+                                "fontSize": 13,
+                                "textAlign": "center",
+                            },
+                            style_data_conditional=[
+                                {"if": {"row_index": "odd"}, "backgroundColor": "rgba(0,0,0,0.02)"},
+                            ],
+                            page_size=10,
+                            fill_width=True,
+                            export_format="csv",
+                            export_headers="display",
+                        ),
+                        className="mt-4",
+                    ),
+                ],
+                md=9,
+            ),
+        ],
+        className="gy-4",
+    ),
+]
+
 app.layout = dbc.Container(
     [
         html.H1("HEMS Data Explorer", className="text-center my-4"),
@@ -725,6 +1171,9 @@ app.layout = dbc.Container(
                 dbc.Tab(overview_layout, label="Overview", tab_id="overview", tab_style={"padding": "0.75rem"}, active_tab_style={"backgroundColor": "#ffffff"}),
                 dbc.Tab(visualisation_layout, label="Visualisation Studio", tab_id="visualisation", tab_style={"padding": "0.75rem"}, active_tab_style={"backgroundColor": "#ffffff"}),
                 dbc.Tab(decomposition_layout, label="Decomposition", tab_id="decomposition", tab_style={"padding": "0.75rem"}, active_tab_style={"backgroundColor": "#ffffff"}),
+                dbc.Tab(stat_models_layout, label="Stat Models", tab_id="stat_models", tab_style={"padding": "0.75rem"}, active_tab_style={"backgroundColor": "#ffffff"}),
+                dbc.Tab(ml_models_layout, label="ML Models", tab_id="ml_models", tab_style={"padding": "0.75rem"}, active_tab_style={"backgroundColor": "#ffffff"}),
+                dbc.Tab(forecasting_layout, label="Forecasting", tab_id="forecasting", tab_style={"padding": "0.75rem"}, active_tab_style={"backgroundColor": "#ffffff"}),
                 dbc.Tab(pv_cleaning_layout, label="PV Cleaning", tab_id="pv_cleaning", tab_style={"padding": "0.75rem"}, active_tab_style={"backgroundColor": "#ffffff"}),
                 dbc.Tab(features_layout, label="Features", tab_id="features", tab_style={"padding": "0.75rem"}, active_tab_style={"backgroundColor": "#ffffff"}),
             ],
@@ -1143,6 +1592,266 @@ def update_pv_summary_table(strategy: str):
     styles.append({"if": {"filter_query": '{series} = "original"'}, "backgroundColor": "#e9ecef"})
     style = styles
     return ordered, style
+
+
+@app.callback(
+    Output("stat-acf-figure", "figure"),
+    Output("stat-forecast-figure", "figure"),
+    Output("stat-metrics-table", "data"),
+    Output("stat-daily-table", "data"),
+    Output("stat-day-dropdown", "options"),
+    Output("stat-day-dropdown", "value"),
+    Output("stat-day-dropdown", "disabled"),
+    Input("stat-model-dropdown", "value"),
+    Input("stat-eval-radio", "value"),
+    Input("stat-day-dropdown", "value"),
+)
+def update_stat_models_tab(model_name: str, evaluation_mode: str, selected_day: int | None):
+    model_name = model_name or (STAT_MODEL_OPTIONS[0]["value"] if STAT_MODEL_OPTIONS else None)
+    evaluation_mode = evaluation_mode or "split"
+
+    acf_data = STAT_MODEL_ACF.get(
+        model_name,
+        {"acf": pd.DataFrame(columns=["lag", "value"]), "pacf": pd.DataFrame(columns=["lag", "value"])}
+    )
+    acf_fig = plot_acf_pacf(
+        acf_data.get("acf", pd.DataFrame(columns=["lag", "value"])),
+        acf_data.get("pacf", pd.DataFrame(columns=["lag", "value"])),
+        title=f"ACF/PACF – {model_name}",
+        style="dashboard",
+    )
+
+    eval_map = {"split": "Whole-train split", "walk": "Walk-forward mean"}
+    eval_label = eval_map.get(evaluation_mode, "Whole-train split")
+    metrics_data: list[dict] = []
+    if not STAT_MODEL_METRICS.empty:
+        subset = STAT_MODEL_METRICS[STAT_MODEL_METRICS["evaluation"] == eval_label].copy()
+        if not subset.empty:
+            for col in ["MAE", "RMSE", "nRMSE"]:
+                if col in subset.columns:
+                    subset[col] = pd.to_numeric(subset[col], errors="coerce").round(3)
+            metrics_data = subset[["model_name", "MAE", "RMSE", "nRMSE"]].fillna(np.nan).to_dict("records")
+
+    daily_data: list[dict] = []
+    day_options: list[dict] = []
+    day_value = selected_day
+    day_disabled = True
+
+    if evaluation_mode == "walk" and not STAT_WALKFORWARD_METRICS.empty:
+        model_daily = STAT_WALKFORWARD_METRICS[STAT_WALKFORWARD_METRICS["model_name"] == model_name].copy()
+        if not model_daily.empty:
+            model_daily["day_idx"] = model_daily["day_idx"].astype(int)
+            for col in ["MAE", "RMSE", "nRMSE"]:
+                if col in model_daily.columns:
+                    model_daily[col] = pd.to_numeric(model_daily[col], errors="coerce").round(3)
+            daily_data = model_daily[["day_idx", "MAE", "RMSE", "nRMSE"]].to_dict("records")
+            unique_days = sorted(model_daily["day_idx"].unique())
+            day_options = [{"label": f"Day {d}", "value": int(d)} for d in unique_days]
+            day_disabled = False
+            if day_value not in [opt["value"] for opt in day_options]:
+                day_value = day_options[0]["value"] if day_options else None
+        forecast_source = STAT_WALKFORWARD_PREDICTIONS[
+            (STAT_WALKFORWARD_PREDICTIONS.get("model_name") == model_name)
+            & (STAT_WALKFORWARD_PREDICTIONS.get("day_idx") == day_value)
+        ]
+    else:
+        forecast_source = STAT_SINGLE_SPLIT_PREDICTIONS[
+            STAT_SINGLE_SPLIT_PREDICTIONS.get("model_name") == model_name
+        ]
+
+    forecast_source = forecast_source.copy() if isinstance(forecast_source, pd.DataFrame) else pd.DataFrame()
+    if not forecast_source.empty:
+        forecast_source["value_label"] = "Demand (kW)"
+
+    forecast_title = (
+        f"24h forecast overlay – {model_name}"
+        if evaluation_mode == "split"
+        else f"Walk-forward day {day_value or ''} – {model_name}"
+    )
+    forecast_fig = plot_forecast_overlay(forecast_source, title=forecast_title, style="dashboard")
+
+    return (
+        acf_fig,
+        forecast_fig,
+        metrics_data,
+        daily_data,
+        day_options,
+        day_value,
+        day_disabled,
+    )
+
+
+@app.callback(
+    Output("ml-forecast-figure", "figure"),
+    Output("ml-metrics-figure", "figure"),
+    Output("ml-extra-figure", "figure"),
+    Output("ml-comparison-table", "data"),
+    Output("ml-day-dropdown", "options"),
+    Output("ml-day-dropdown", "value"),
+    Output("ml-day-dropdown", "disabled"),
+    Input("ml-model-dropdown", "value"),
+    Input("ml-eval-radio", "value"),
+    Input("ml-day-dropdown", "value"),
+    Input("ml-show-importance", "value"),
+)
+def update_ml_tab(model_value: str, evaluation_mode: str, selected_day: int | None, show_importance: list[str]):
+    evaluation_mode = evaluation_mode or "walk"
+    show_importance = show_importance or []
+
+    def _placeholder(msg: str) -> go.Figure:
+        return _empty_figure(msg)
+
+    # Prepare comparison table data
+    table_records = []
+    if not BEST_STAT_VS_ML.empty:
+        df_table = BEST_STAT_VS_ML.copy()
+        for col in ["MAE", "RMSE", "nRMSE"]:
+            if col in df_table.columns:
+                df_table[col] = pd.to_numeric(df_table[col], errors="coerce").round(3)
+        table_records = df_table.to_dict("records")
+
+    # Determine walk-forward day options
+    day_options = []
+    day_value = selected_day
+    day_disabled = True
+    if not ML_WALKFORWARD_PREDICTIONS.empty:
+        unique_days = sorted(ML_WALKFORWARD_PREDICTIONS["day_idx"].unique())
+        day_options = [{"label": f"Day {int(d)}", "value": int(d)} for d in unique_days]
+        day_disabled = evaluation_mode != "walk"
+        if evaluation_mode == "walk":
+            if day_value not in [opt["value"] for opt in day_options]:
+                day_value = day_options[0]["value"] if day_options else None
+        else:
+            day_value = None
+
+    # Forecast overlay figure
+    if evaluation_mode == "split":
+        if ML_SPLIT_PREDICTIONS.empty:
+            forecast_fig = _placeholder("No ML split predictions")
+        else:
+            overlay = ML_SPLIT_PREDICTIONS.copy()
+            overlay.rename(columns={"Actual": "Actual", "XGBoost": "XGBoost"}, inplace=True)
+            if not STAT_SINGLE_SPLIT_PREDICTIONS.empty and BEST_STAT_MODEL:
+                stat_split = STAT_SINGLE_SPLIT_PREDICTIONS[
+                    STAT_SINGLE_SPLIT_PREDICTIONS["model_name"] == BEST_STAT_MODEL
+                ][["timestamp", "y_pred"]].rename(columns={"y_pred": "Statistical"})
+                overlay = overlay.merge(stat_split, on="timestamp", how="left")
+            else:
+                overlay["Statistical"] = np.nan
+            forecast_fig = plot_forecast_overlay_multimodel(overlay, style="dashboard")
+    else:
+        if ML_WALKFORWARD_PREDICTIONS.empty or day_value is None:
+            forecast_fig = _placeholder("No walk-forward predictions")
+        else:
+            ml_day = ML_WALKFORWARD_PREDICTIONS[ML_WALKFORWARD_PREDICTIONS["day_idx"] == day_value]
+            overlay = pd.DataFrame(
+                {
+                    "timestamp": ml_day["timestamp"],
+                    "Actual": ml_day["y_true"],
+                    "XGBoost": ml_day["y_pred"],
+                }
+            )
+            if not STAT_WALKFORWARD_PREDICTIONS.empty and BEST_STAT_MODEL:
+                stat_day = STAT_WALKFORWARD_PREDICTIONS[
+                    (STAT_WALKFORWARD_PREDICTIONS["day_idx"] == day_value)
+                    & (STAT_WALKFORWARD_PREDICTIONS["model_name"] == BEST_STAT_MODEL)
+                ][["timestamp", "y_pred"]].rename(columns={"y_pred": "Statistical"})
+                overlay = overlay.merge(stat_day, on="timestamp", how="left")
+            else:
+                overlay["Statistical"] = np.nan
+            forecast_fig = plot_forecast_overlay_multimodel(overlay, style="dashboard")
+
+    # Metrics figure
+    if BEST_STAT_VS_ML.empty:
+        metrics_fig = _placeholder("No metrics available")
+    else:
+        eval_label = "Whole-train split" if evaluation_mode == "split" else "Walk-forward mean"
+        metrics_subset = BEST_STAT_VS_ML[BEST_STAT_VS_ML["evaluation"] == eval_label]
+        melted = metrics_subset.melt(id_vars=["model", "evaluation"], value_vars=["MAE", "RMSE", "nRMSE"], var_name="metric", value_name="value")
+        metrics_fig = plot_metrics_comparison(melted, style="dashboard")
+
+    # Extra figure (feature importance or learning curve)
+    if "importance" in show_importance and not ML_FEATURE_IMPORTANCE.empty:
+        extra_fig = plot_feature_importance(ML_FEATURE_IMPORTANCE, style="dashboard")
+    elif not ML_LEARNING_CURVE.empty:
+        extra_fig = plot_learning_curve(ML_LEARNING_CURVE, style="dashboard")
+    else:
+        extra_fig = _placeholder("No additional diagnostics")
+
+    return (
+        forecast_fig,
+        metrics_fig,
+        extra_fig,
+        table_records,
+        day_options,
+        day_value,
+        day_disabled,
+    )
+
+
+@app.callback(
+    Output("forecast-day-figure", "figure"),
+    Output("forecast-week-figure", "figure"),
+    Output("forecast-metrics-table", "data"),
+    Input("forecast-model-radio", "value"),
+    Input("forecast-day-dropdown", "value"),
+    Input("forecast-show-summary", "value"),
+)
+def update_forecasting_tab(model_choice: str, day_value: int | None, show_summary: list[str]):
+    model_choice = model_choice or "ALL"
+    show_summary = show_summary or []
+
+    if FORECAST_PREDICTIONS.empty:
+        placeholder = _empty_figure("No forecast data available")
+        return placeholder, placeholder, []
+
+    available_days = sorted(FORECAST_PREDICTIONS["day_idx"].unique())
+    if not available_days:
+        placeholder = _empty_figure("No forecast data available")
+        return placeholder, placeholder, []
+
+    if day_value is None or day_value not in available_days:
+        day_value = available_days[0]
+
+    day_subset = FORECAST_PREDICTIONS[FORECAST_PREDICTIONS["day_idx"] == day_value]
+    if day_subset.empty:
+        day_fig = _empty_figure("No data for selected day")
+    else:
+        wide_day = day_subset.pivot(index="timestamp", columns="model_name", values="y_pred")
+        wide_day["Actual"] = day_subset.groupby("timestamp")["y_true"].first()
+        if model_choice == "ALL":
+            columns = ["Actual"] + [col for col in wide_day.columns if col != "Actual"]
+        else:
+            columns = [col for col in ["Actual", model_choice] if col in wide_day.columns]
+        wide_day = wide_day[columns].reset_index()
+        day_fig = plot_forecast_overlay_day(wide_day, style="dashboard")
+
+    if FORECAST_METRICS_SUMMARY.empty:
+        week_fig = _empty_figure("No metrics available")
+        table_data = []
+    else:
+        best_stat_model = BEST_STAT_MODEL or "Statistical"
+        best_stat_subset = FORECAST_PREDICTIONS[FORECAST_PREDICTIONS["model_name"] == best_stat_model]
+        best_ml_subset = FORECAST_PREDICTIONS[FORECAST_PREDICTIONS["model_name"] == "XGBoost"]
+        actual = FORECAST_PREDICTIONS.groupby("timestamp")["y_true"].first().reset_index().rename(columns={"y_true": "Actual"})
+        merged = actual.copy()
+        if not best_stat_subset.empty:
+            merged = merged.merge(best_stat_subset[["timestamp", "y_pred"]].rename(columns={"y_pred": "BestStat"}), on="timestamp", how="left")
+        if not best_ml_subset.empty:
+            merged = merged.merge(best_ml_subset[["timestamp", "y_pred"]].rename(columns={"y_pred": "BestML"}), on="timestamp", how="left")
+        week_fig = plot_forecast_overlay_week(merged, style="dashboard")
+
+        if "summary" in show_summary:
+            summary = FORECAST_METRICS_SUMMARY.copy()
+            for col in summary.columns:
+                if col != "model_name":
+                    summary[col] = pd.to_numeric(summary[col], errors="coerce").round(3)
+            table_data = summary.to_dict("records")
+        else:
+            table_data = []
+
+    return day_fig, week_fig, table_data
+
 
 @app.callback(
     Output("viz-graph", "figure"),

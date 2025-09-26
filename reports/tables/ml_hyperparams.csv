@@ -1,0 +1,9 @@
+parameter,value,rationale
+n_estimators,600.0,Sufficient trees for convergence with early stopping.
+learning_rate,0.06,Small eta to track gradual load shifts.
+max_depth,6.0,Captures nonlinearities without memorising daily noise.
+subsample,0.85,Prevents overfitting by row subsampling.
+colsample_bytree,0.9,Retains feature diversity while avoiding collinearity.
+min_child_weight,3.0,Controls complexity for sparse nighttime demand.
+reg_lambda,1.2,L2 regularisation for stability across weeks.
+early_stopping_rounds,50.0,Stops when validation RMSE plateaus.

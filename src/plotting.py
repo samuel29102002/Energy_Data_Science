@@ -157,5 +157,422 @@ __all__ = [
     "plot_stl_components",
     "plot_typical_profiles_weekday_weekend",
     "plot_typical_profiles_monthly",
+    "plot_acf_pacf",
+    "plot_forecast_overlay",
+    "plot_walkforward_panels",
+    "plot_metrics_bar",
+    "plot_feature_importance",
+    "plot_forecast_overlay_multimodel",
+    "plot_metrics_comparison",
+    "plot_learning_curve",
+    "plot_forecast_overlay_day",
+    "plot_forecast_overlay_week",
+    "plot_forecast_metrics",
 ]
 
+
+def _empty_plot(title: str, style: Style = "academic") -> go.Figure:
+    fig = go.Figure()
+    fig.update_layout(
+        title=title,
+        annotations=[
+            {
+                "text": title,
+                "xref": "paper",
+                "yref": "paper",
+                "x": 0.5,
+                "y": 0.5,
+                "showarrow": False,
+            }
+        ],
+    )
+    return _apply_style(fig, style)
+
+
+def plot_acf_pacf(
+    acf_df: pd.DataFrame,
+    pacf_df: pd.DataFrame,
+    title: str,
+    style: Style = "academic",
+) -> go.Figure:
+    if acf_df.empty or pacf_df.empty:
+        return _empty_plot("ACF/PACF unavailable", style=style)
+
+    from plotly.subplots import make_subplots
+
+    fig = make_subplots(rows=1, cols=2, subplot_titles=("ACF", "PACF"))
+    fig.add_trace(
+        go.Bar(
+            x=acf_df["lag"],
+            y=acf_df["value"],
+            marker_color=ENERGY_COLORS["grid"],
+            name="ACF",
+        ),
+        row=1,
+        col=1,
+    )
+    fig.add_trace(
+        go.Bar(
+            x=pacf_df["lag"],
+            y=pacf_df["value"],
+            marker_color=ENERGY_COLORS["solar"],
+            name="PACF",
+        ),
+        row=1,
+        col=2,
+    )
+    fig.update_xaxes(title_text="Lag", row=1, col=1)
+    fig.update_yaxes(title_text="Correlation", row=1, col=1)
+    fig.update_xaxes(title_text="Lag", row=1, col=2)
+    fig.update_yaxes(title_text="Partial correlation", row=1, col=2)
+    fig.update_layout(title=title, showlegend=False)
+    return _apply_style(fig, style)
+
+
+def plot_forecast_overlay(
+    df24: pd.DataFrame,
+    title: str,
+    style: Style = "academic",
+) -> go.Figure:
+    if df24 is None or df24.empty:
+        return _empty_plot("No forecast data", style=style)
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=df24["timestamp"],
+            y=df24["y_true"],
+            mode="lines+markers",
+            name="Observed",
+            line=dict(color=ENERGY_COLORS["grid"], width=2),
+            marker=dict(size=6),
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=df24["timestamp"],
+            y=df24["y_pred"],
+            mode="lines+markers",
+            name="Forecast",
+            line=dict(color=ENERGY_COLORS["solar"], width=2, dash="dash"),
+            marker=dict(size=6),
+        )
+    )
+    fig.update_layout(title=title, hovermode="x unified")
+    fig.update_xaxes(title_text="Timestamp")
+    default_label = "Demand (kW)"
+    if "value_label" in df24.columns:
+        label_series = df24["value_label"].dropna()
+        y_label = label_series.iloc[0] if not label_series.empty else default_label
+    else:
+        y_label = default_label
+    fig.update_yaxes(title_text=str(y_label))
+    return _apply_style(fig, style)
+
+
+def plot_walkforward_panels(
+    pred_df: pd.DataFrame,
+    style: Style = "academic",
+) -> go.Figure:
+    if pred_df is None or pred_df.empty:
+        return _empty_plot("Walk-forward data unavailable", style=style)
+
+    from plotly.subplots import make_subplots
+
+    unique_days = sorted(pred_df["day_idx"].unique())
+    n_days = len(unique_days)
+    cols = 2
+    rows = int(np.ceil(n_days / cols))
+
+    fig = make_subplots(rows=rows, cols=cols, shared_yaxes=True, subplot_titles=[f"Day {d}" for d in unique_days])
+
+    for i, day in enumerate(unique_days):
+        row = i // cols + 1
+        col = i % cols + 1
+        subset = pred_df[pred_df["day_idx"] == day]
+        fig.add_trace(
+            go.Scatter(
+                x=subset["timestamp"],
+                y=subset["y_true"],
+                mode="lines",
+                name=f"Observed {day}",
+                line=dict(color=ENERGY_COLORS["grid"], width=2),
+                showlegend=False,
+            ),
+            row=row,
+            col=col,
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=subset["timestamp"],
+                y=subset["y_pred"],
+                mode="lines",
+                name=f"Forecast {day}",
+                line=dict(color=ENERGY_COLORS["solar"], width=2, dash="dash"),
+                showlegend=False,
+            ),
+            row=row,
+            col=col,
+        )
+    fig.update_layout(title="Last-week walk-forward forecasts", hovermode="x unified")
+    fig.update_xaxes(title_text="Timestamp")
+    fig.update_yaxes(title_text="Demand (kW)")
+    return _apply_style(fig, style)
+
+
+def plot_metrics_bar(
+    metrics_df: pd.DataFrame,
+    style: Style = "academic",
+) -> go.Figure:
+    if metrics_df is None or metrics_df.empty:
+        return _empty_plot("Metrics unavailable", style=style)
+
+    if {"model_name", "metric", "value"}.issubset(metrics_df.columns):
+        formatted = metrics_df.copy()
+    else:
+        id_vars = [c for c in metrics_df.columns if c not in {"MAE", "RMSE", "nRMSE"}]
+        formatted = metrics_df.melt(id_vars=id_vars, value_vars=["MAE", "RMSE", "nRMSE"], var_name="metric", value_name="value")
+
+    color_map = {
+        "MAE": ENERGY_COLORS["grid"],
+        "RMSE": ENERGY_COLORS["battery"],
+        "nRMSE": ENERGY_COLORS["solar"],
+    }
+
+    fig = go.Figure()
+    for metric, group in formatted.groupby("metric"):
+        fig.add_trace(
+            go.Bar(
+                x=group["model_name"],
+                y=group["value"],
+                name=metric,
+                marker_color=color_map.get(metric, ENERGY_COLORS["storage"]),
+            )
+        )
+
+    fig.update_layout(
+        title="Model performance comparison",
+        barmode="group",
+        xaxis_title="Model",
+        yaxis_title="Score",
+    )
+    return _apply_style(fig, style)
+
+
+def plot_feature_importance(
+    importances_df: pd.DataFrame,
+    top_n: int = 15,
+    style: Style = "academic",
+) -> go.Figure:
+    if importances_df is None or importances_df.empty:
+        return _empty_plot("Feature importance unavailable", style=style)
+
+    df_sorted = importances_df.sort_values("importance", ascending=False).head(top_n)
+    fig = go.Figure(
+        go.Bar(
+            x=df_sorted["importance"][::-1],
+            y=df_sorted["feature"][::-1],
+            orientation="h",
+            marker_color=ENERGY_COLORS["solar"],
+        )
+    )
+    fig.update_layout(title="Top feature importances", xaxis_title="Importance", yaxis_title="Feature")
+    return _apply_style(fig, style)
+
+
+def plot_forecast_overlay_multimodel(
+    df24: pd.DataFrame,
+    style: Style = "academic",
+) -> go.Figure:
+    if df24 is None or df24.empty:
+        return _empty_plot("No forecast data", style=style)
+
+    fig = go.Figure()
+    color_map = {
+        "Actual": ENERGY_COLORS["grid"],
+        "XGBoost": ENERGY_COLORS["solar"],
+        "Statistical": ENERGY_COLORS["battery"],
+    }
+
+    for series_name in ["Actual", "XGBoost", "Statistical"]:
+        if series_name not in df24.columns:
+            continue
+        fig.add_trace(
+            go.Scatter(
+                x=df24["timestamp"],
+                y=df24[series_name],
+                mode="lines+markers",
+                name=series_name,
+                line=dict(
+                    color=color_map.get(series_name, ENERGY_COLORS["storage"]),
+                    width=2,
+                    dash="dash" if series_name != "Actual" else None,
+                ),
+                marker=dict(size=6),
+            )
+        )
+
+    fig.update_layout(title="24h forecast comparison", hovermode="x unified")
+    fig.update_xaxes(title_text="Timestamp")
+    fig.update_yaxes(title_text="Demand (kW)")
+    return _apply_style(fig, style)
+
+
+def plot_metrics_comparison(
+    metrics_df: pd.DataFrame,
+    style: Style = "academic",
+) -> go.Figure:
+    if metrics_df is None or metrics_df.empty:
+        return _empty_plot("Metrics unavailable", style=style)
+
+    required = {"model", "metric", "value"}
+    if not required.issubset(metrics_df.columns):
+        raise ValueError("metrics_df must contain columns 'model', 'metric', 'value'")
+
+    fig = go.Figure()
+    color_map = {
+        "MAE": ENERGY_COLORS["grid"],
+        "RMSE": ENERGY_COLORS["battery"],
+        "nRMSE": ENERGY_COLORS["solar"],
+    }
+
+    for metric, group in metrics_df.groupby("metric"):
+        fig.add_trace(
+            go.Bar(
+                x=group["model"],
+                y=group["value"],
+                name=metric,
+                marker_color=color_map.get(metric, ENERGY_COLORS["storage"]),
+            )
+        )
+    fig.update_layout(
+        title="ML vs Statistical metrics",
+        barmode="group",
+        xaxis_title="Model",
+        yaxis_title="Score",
+    )
+    return _apply_style(fig, style)
+
+
+def plot_learning_curve(
+    curve_df: pd.DataFrame,
+    style: Style = "academic",
+) -> go.Figure:
+    if curve_df is None or curve_df.empty:
+        return _empty_plot("Learning curve unavailable", style=style)
+
+    fig = go.Figure()
+    for column in curve_df.columns:
+        if column == "iteration":
+            continue
+        fig.add_trace(
+            go.Scatter(
+                x=curve_df["iteration"],
+                y=curve_df[column],
+                mode="lines",
+                name=column,
+            )
+        )
+
+    fig.update_layout(title="Training history", xaxis_title="Iteration", yaxis_title="Metric")
+    return _apply_style(fig, style)
+
+
+def plot_forecast_overlay_day(
+    df24: pd.DataFrame,
+    style: Style = "academic",
+) -> go.Figure:
+    if df24 is None or df24.empty:
+        return _empty_plot("No forecast data", style=style)
+
+    fig = go.Figure()
+    columns = [col for col in df24.columns if col != "timestamp"]
+    color_cycle = [
+        ENERGY_COLORS["grid"],
+        ENERGY_COLORS["solar"],
+        ENERGY_COLORS["battery"],
+        ENERGY_COLORS["storage"],
+        "#17becf",
+    ]
+    for idx, col in enumerate(columns):
+        fig.add_trace(
+            go.Scatter(
+                x=df24["timestamp"],
+                y=df24[col],
+                mode="lines+markers",
+                name=col,
+                line=dict(color=color_cycle[idx % len(color_cycle)], width=2, dash=None if col == "Actual" else "dash"),
+                marker=dict(size=6),
+            )
+        )
+    fig.update_layout(title="24h forecast overlay", hovermode="x unified")
+    fig.update_xaxes(title_text="Timestamp")
+    fig.update_yaxes(title_text="Demand (kW)")
+    return _apply_style(fig, style)
+
+
+def plot_forecast_overlay_week(
+    df_week: pd.DataFrame,
+    style: Style = "academic",
+) -> go.Figure:
+    if df_week is None or df_week.empty:
+        return _empty_plot("No week-long data", style=style)
+
+    fig = go.Figure()
+    columns = [col for col in df_week.columns if col != "timestamp"]
+    palette = {
+        "Actual": ENERGY_COLORS["grid"],
+        "BestStat": ENERGY_COLORS["battery"],
+        "BestML": ENERGY_COLORS["solar"],
+    }
+    for idx, col in enumerate(columns):
+        fig.add_trace(
+            go.Scatter(
+                x=df_week["timestamp"],
+                y=df_week[col],
+                mode="lines",
+                name=col,
+                line=dict(width=2, color=palette.get(col, palette.get(col.title(), None))),
+            )
+        )
+    fig.update_layout(title="7-day rolling forecast overlay", hovermode="x unified")
+    fig.update_xaxes(title_text="Timestamp")
+    fig.update_yaxes(title_text="Demand (kW)")
+    return _apply_style(fig, style)
+
+
+def plot_forecast_metrics(
+    metrics_df: pd.DataFrame,
+    style: Style = "academic",
+) -> go.Figure:
+    if metrics_df is None or metrics_df.empty:
+        return _empty_plot("Metrics unavailable", style=style)
+
+    required = {"model_name", "metric", "value"}
+    if not required.issubset(metrics_df.columns):
+        raise ValueError("metrics_df must contain model_name, metric, value")
+
+    color_map = {
+        "MAE": ENERGY_COLORS["grid"],
+        "RMSE": ENERGY_COLORS["battery"],
+        "nRMSE": ENERGY_COLORS["solar"],
+    }
+
+    fig = go.Figure()
+    for metric, group in metrics_df.groupby("metric"):
+        fig.add_trace(
+            go.Bar(
+                x=group["model_name"],
+                y=group["value"],
+                name=metric,
+                marker_color=color_map.get(metric, ENERGY_COLORS["storage"]),
+            )
+        )
+
+    fig.update_layout(
+        title="Forecast metrics comparison",
+        barmode="group",
+        xaxis_title="Model",
+        yaxis_title="Score",
+    )
+    return _apply_style(fig, style)
