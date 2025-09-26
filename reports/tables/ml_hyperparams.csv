@@ -1,9 +1,9 @@
 parameter,value,rationale
-n_estimators,600.0,Sufficient trees for convergence with early stopping.
-learning_rate,0.06,Small eta to track gradual load shifts.
-max_depth,6.0,Captures nonlinearities without memorising daily noise.
-subsample,0.85,Prevents overfitting by row subsampling.
-colsample_bytree,0.9,Retains feature diversity while avoiding collinearity.
-min_child_weight,3.0,Controls complexity for sparse nighttime demand.
-reg_lambda,1.2,L2 regularisation for stability across weeks.
-early_stopping_rounds,50.0,Stops when validation RMSE plateaus.
+n_estimators,600,Sufficient capacity with early stopping to follow daily ramps.
+learning_rate,0.06,Small eta to smooth updates and retain stability.
+max_depth,6,Captures interactions without memorising hourly noise.
+subsample,0.85,Introduces diversity and guards against overfitting.
+colsample_bytree,0.9,Keeps most weather features while reducing collinearity.
+reg_lambda,1.2,L2 regularisation for generalisation across seasons.
+min_child_weight,3,Controls leaf noise in low-demand overnight periods.
+tree_method,hist,Fast histogram-based GPU/CPU training.

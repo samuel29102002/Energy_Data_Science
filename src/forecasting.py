@@ -56,6 +56,20 @@ def ensure_numeric_cols(df: pd.DataFrame, cols: Sequence[str]) -> pd.DataFrame:
     return result
 
 
+def _align_by_index(
+    y_true: Iterable[float],
+    y_pred: Iterable[float],
+    idx_true: Iterable,
+    idx_pred: Iterable,
+) -> Tuple[pd.Index, np.ndarray, np.ndarray]:
+    s_true = pd.Series(np.asarray(y_true), index=pd.Index(idx_true))
+    s_pred = pd.Series(np.asarray(y_pred), index=pd.Index(idx_pred))
+    common = s_true.index.intersection(s_pred.index)
+    aligned_true = s_true.loc[common].astype(float).values
+    aligned_pred = s_pred.loc[common].astype(float).values
+    return common, aligned_true, aligned_pred
+
+
 def build_forecast_features(df: pd.DataFrame) -> pd.DataFrame:
     data = df.copy()
     if "timestamp" in data.columns:
@@ -162,22 +176,17 @@ def rolling_forecast_7days(
         if actual_len == 0:
             continue
 
-        def _align_arrays(*arrays):
-            converted = [np.asarray(arr) for arr in arrays if arr is not None]
-            min_len = min(len(arr) for arr in converted)
-            return [arr[:min_len] for arr in converted]
-
         # Baselines
         if include_baselines:
             naive_preds = _naive_predictions(train_df[target], actual_len)
             seasonal_preds = _seasonal_naive_predictions(train_df[target], actual_len)
             for name, preds in ("Naive", naive_preds), ("SeasonalNaive", seasonal_preds):
-                aligned_ts, aligned_true, aligned_pred = _align_arrays(timestamps, y_true, preds)
+                common_idx, aligned_true, aligned_pred = _align_by_index(y_true, preds, timestamps, timestamps)
                 metrics = _evaluate_forecast(aligned_true, aligned_pred)
                 metrics_records.append({"day_idx": idx, "model_name": name, **metrics})
                 predictions_records.append(
                     {
-                        "timestamp": aligned_ts.tolist(),
+                        "timestamp": common_idx.tolist(),
                         "day_idx": idx,
                         "model_name": name,
                         "y_true": aligned_true.tolist(),
@@ -193,12 +202,12 @@ def rolling_forecast_7days(
             stat_values = stat_forecast.values if hasattr(stat_forecast, "values") else np.asarray(stat_forecast)
         except Exception:
             stat_values = np.full(actual_len, np.nan)
-        aligned_ts, aligned_true, aligned_stat = _align_arrays(timestamps, y_true, stat_values)
+        common_idx, aligned_true, aligned_stat = _align_by_index(y_true, stat_values, timestamps, timestamps)
         metrics = _evaluate_forecast(aligned_true, aligned_stat)
         metrics_records.append({"day_idx": idx, "model_name": stat_spec["model_name"], **metrics})
         predictions_records.append(
             {
-                "timestamp": aligned_ts.tolist(),
+                "timestamp": common_idx.tolist(),
                 "day_idx": idx,
                 "model_name": stat_spec["model_name"],
                 "y_true": aligned_true.tolist(),
@@ -230,12 +239,12 @@ def rolling_forecast_7days(
             else:
                 model_ml, _ = train_xgboost(X_train, y_train, params=ml_params)
             ml_preds = predict_xgboost(model_ml, X_forecast)
-        aligned_ts, aligned_true, aligned_ml = _align_arrays(timestamps, y_true, ml_preds)
+        common_idx, aligned_true, aligned_ml = _align_by_index(y_true, ml_preds, timestamps, timestamps)
         metrics = evaluate_ml_forecast(aligned_true, aligned_ml)
         metrics_records.append({"day_idx": idx, "model_name": "XGBoost", **metrics})
         predictions_records.append(
             {
-                "timestamp": aligned_ts.tolist(),
+                "timestamp": common_idx.tolist(),
                 "day_idx": idx,
                 "model_name": "XGBoost",
                 "y_true": aligned_true.tolist(),

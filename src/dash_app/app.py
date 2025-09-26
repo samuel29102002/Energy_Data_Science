@@ -983,31 +983,9 @@ ml_models_layout = [
                     dbc.Label("Model"),
                     dcc.Dropdown(
                         id="ml-model-dropdown",
-                        options=[
-                            {"label": "XGBoost", "value": "xgb"},
-                            {"label": "LSTM", "value": "lstm", "disabled": True},
-                        ],
-                        value="xgb",
+                        options=[{"label": "XGBoost", "value": "XGBoost"}],
+                        value="XGBoost",
                         clearable=False,
-                        className="mb-3",
-                    ),
-                    dbc.Label("Evaluation"),
-                    dcc.RadioItems(
-                        id="ml-eval-radio",
-                        options=[
-                            {"label": "Whole-train split", "value": "split"},
-                            {"label": "Last-week walk-forward", "value": "walk"},
-                        ],
-                        value="walk",
-                        className="mb-3",
-                    ),
-                    dbc.Label("Walk-forward day"),
-                    dcc.Dropdown(
-                        id="ml-day-dropdown",
-                        options=[],
-                        value=None,
-                        clearable=False,
-                        disabled=True,
                         className="mb-3",
                     ),
                     dbc.Checklist(
@@ -1017,6 +995,7 @@ ml_models_layout = [
                         switch=True,
                         className="mb-3",
                     ),
+                    html.Small("nRMSE = RMSE / (max(y_true) - min(y_true))", className="text-muted"),
                 ],
                 md=3,
                 style=sidebar_style,
@@ -1686,91 +1665,50 @@ def update_stat_models_tab(model_name: str, evaluation_mode: str, selected_day: 
     Output("ml-metrics-figure", "figure"),
     Output("ml-extra-figure", "figure"),
     Output("ml-comparison-table", "data"),
-    Output("ml-day-dropdown", "options"),
-    Output("ml-day-dropdown", "value"),
-    Output("ml-day-dropdown", "disabled"),
     Input("ml-model-dropdown", "value"),
-    Input("ml-eval-radio", "value"),
-    Input("ml-day-dropdown", "value"),
     Input("ml-show-importance", "value"),
 )
-def update_ml_tab(model_value: str, evaluation_mode: str, selected_day: int | None, show_importance: list[str]):
-    evaluation_mode = evaluation_mode or "walk"
+def update_ml_tab(model_value: str, show_importance: list[str]):
     show_importance = show_importance or []
 
     def _placeholder(msg: str) -> go.Figure:
         return _empty_figure(msg)
 
-    # Prepare comparison table data
-    table_records = []
+    if ML_SPLIT_PREDICTIONS.empty:
+        placeholder = _placeholder("No ML predictions available")
+        table_records: list[dict] = []
+        extra_fig = plot_feature_importance(ML_FEATURE_IMPORTANCE, style="dashboard") if "importance" in show_importance and not ML_FEATURE_IMPORTANCE.empty else _placeholder("No additional diagnostics")
+        return placeholder, placeholder, extra_fig, table_records
+
+    overlay = ML_SPLIT_PREDICTIONS.copy()
+    if BEST_STAT_MODEL and not STAT_SINGLE_SPLIT_PREDICTIONS.empty:
+        stat_split = (
+            STAT_SINGLE_SPLIT_PREDICTIONS[STAT_SINGLE_SPLIT_PREDICTIONS["model_name"] == BEST_STAT_MODEL]
+            [["timestamp", "y_pred"]]
+            .rename(columns={"y_pred": "Statistical"})
+        )
+        if not stat_split.empty:
+            overlay = overlay.merge(stat_split, on="timestamp", how="left")
+
+    forecast_fig = plot_forecast_overlay_multimodel(overlay, style="dashboard")
+
     if not BEST_STAT_VS_ML.empty:
-        df_table = BEST_STAT_VS_ML.copy()
-        for col in ["MAE", "RMSE", "nRMSE"]:
-            if col in df_table.columns:
-                df_table[col] = pd.to_numeric(df_table[col], errors="coerce").round(3)
-        table_records = df_table.to_dict("records")
-
-    # Determine walk-forward day options
-    day_options = []
-    day_value = selected_day
-    day_disabled = True
-    if not ML_WALKFORWARD_PREDICTIONS.empty:
-        unique_days = sorted(ML_WALKFORWARD_PREDICTIONS["day_idx"].unique())
-        day_options = [{"label": f"Day {int(d)}", "value": int(d)} for d in unique_days]
-        day_disabled = evaluation_mode != "walk"
-        if evaluation_mode == "walk":
-            if day_value not in [opt["value"] for opt in day_options]:
-                day_value = day_options[0]["value"] if day_options else None
-        else:
-            day_value = None
-
-    # Forecast overlay figure
-    if evaluation_mode == "split":
-        if ML_SPLIT_PREDICTIONS.empty:
-            forecast_fig = _placeholder("No ML split predictions")
-        else:
-            overlay = ML_SPLIT_PREDICTIONS.copy()
-            overlay.rename(columns={"Actual": "Actual", "XGBoost": "XGBoost"}, inplace=True)
-            if not STAT_SINGLE_SPLIT_PREDICTIONS.empty and BEST_STAT_MODEL:
-                stat_split = STAT_SINGLE_SPLIT_PREDICTIONS[
-                    STAT_SINGLE_SPLIT_PREDICTIONS["model_name"] == BEST_STAT_MODEL
-                ][["timestamp", "y_pred"]].rename(columns={"y_pred": "Statistical"})
-                overlay = overlay.merge(stat_split, on="timestamp", how="left")
-            else:
-                overlay["Statistical"] = np.nan
-            forecast_fig = plot_forecast_overlay_multimodel(overlay, style="dashboard")
+        metrics_df = BEST_STAT_VS_ML.copy()
     else:
-        if ML_WALKFORWARD_PREDICTIONS.empty or day_value is None:
-            forecast_fig = _placeholder("No walk-forward predictions")
-        else:
-            ml_day = ML_WALKFORWARD_PREDICTIONS[ML_WALKFORWARD_PREDICTIONS["day_idx"] == day_value]
-            overlay = pd.DataFrame(
-                {
-                    "timestamp": ml_day["timestamp"],
-                    "Actual": ml_day["y_true"],
-                    "XGBoost": ml_day["y_pred"],
-                }
-            )
-            if not STAT_WALKFORWARD_PREDICTIONS.empty and BEST_STAT_MODEL:
-                stat_day = STAT_WALKFORWARD_PREDICTIONS[
-                    (STAT_WALKFORWARD_PREDICTIONS["day_idx"] == day_value)
-                    & (STAT_WALKFORWARD_PREDICTIONS["model_name"] == BEST_STAT_MODEL)
-                ][["timestamp", "y_pred"]].rename(columns={"y_pred": "Statistical"})
-                overlay = overlay.merge(stat_day, on="timestamp", how="left")
-            else:
-                overlay["Statistical"] = np.nan
-            forecast_fig = plot_forecast_overlay_multimodel(overlay, style="dashboard")
+        metrics_df = ML_SPLIT_METRICS.rename(columns={"model_name": "model", "evaluation": "evaluation"}) if not ML_SPLIT_METRICS.empty else pd.DataFrame()
 
-    # Metrics figure
-    if BEST_STAT_VS_ML.empty:
+    if metrics_df.empty:
         metrics_fig = _placeholder("No metrics available")
+        table_records = []
     else:
-        eval_label = "Whole-train split" if evaluation_mode == "split" else "Walk-forward mean"
-        metrics_subset = BEST_STAT_VS_ML[BEST_STAT_VS_ML["evaluation"] == eval_label]
-        melted = metrics_subset.melt(id_vars=["model", "evaluation"], value_vars=["MAE", "RMSE", "nRMSE"], var_name="metric", value_name="value")
-        metrics_fig = plot_metrics_comparison(melted, style="dashboard")
+        metrics_copy = metrics_df.copy()
+        for col in ["MAE", "RMSE", "nRMSE"]:
+            if col in metrics_copy.columns:
+                metrics_copy[col] = pd.to_numeric(metrics_copy[col], errors="coerce")
+        metrics_long = metrics_copy.melt(id_vars=[col for col in metrics_copy.columns if col not in {"MAE", "RMSE", "nRMSE"}], value_vars=["MAE", "RMSE", "nRMSE"], var_name="metric", value_name="value")
+        metrics_fig = plot_metrics_comparison(metrics_long, style="dashboard")
+        table_records = metrics_copy.to_dict("records")
 
-    # Extra figure (feature importance or learning curve)
     if "importance" in show_importance and not ML_FEATURE_IMPORTANCE.empty:
         extra_fig = plot_feature_importance(ML_FEATURE_IMPORTANCE, style="dashboard")
     elif not ML_LEARNING_CURVE.empty:
@@ -1778,15 +1716,7 @@ def update_ml_tab(model_value: str, evaluation_mode: str, selected_day: int | No
     else:
         extra_fig = _placeholder("No additional diagnostics")
 
-    return (
-        forecast_fig,
-        metrics_fig,
-        extra_fig,
-        table_records,
-        day_options,
-        day_value,
-        day_disabled,
-    )
+    return forecast_fig, metrics_fig, extra_fig, table_records
 
 
 @app.callback(
