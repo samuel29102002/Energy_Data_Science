@@ -1,0 +1,38 @@
+{
+  "layout": {
+    "font": {
+      "family": "Inter, system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif",
+      "color": "#111827",
+      "size": 13
+    },
+    "paper_bgcolor": "#FFFFFF",
+    "plot_bgcolor": "#FFFFFF",
+    "colorway": ["#1F77B4", "#2CA02C", "#F9A825", "#6E7781", "#9467BD", "#17BECF"],
+    "xaxis": {
+      "gridcolor": "#ECEFF3",
+      "linecolor": "#D9DEE6",
+      "ticks": "outside",
+      "tickcolor": "#D9DEE6",
+      "title": {"standoff": 12}
+    },
+    "yaxis": {
+      "gridcolor": "#ECEFF3",
+      "linecolor": "#D9DEE6",
+      "ticks": "outside",
+      "tickcolor": "#D9DEE6",
+      "title": {"standoff": 12}
+    },
+    "legend": {
+      "bgcolor": "rgba(255,255,255,0.9)",
+      "bordercolor": "#ECEFF3",
+      "borderwidth": 1,
+      "orientation": "h",
+      "yanchor": "bottom",
+      "y": 1.02,
+      "x": 1.0,
+      "xanchor": "right"
+    },
+    "hovermode": "x unified",
+    "margin": {"l": 60, "r": 30, "t": 60, "b": 60}
+  }
+}

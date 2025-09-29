@@ -1,16 +1,16 @@
 feature,importance
-hour_sin,0.10341055
-hour_cos,0.09419786
-is_weekend,0.063298635
-cooling_degree,0.06982445
-heating_degree,0.04819185
-temp_irradiance_interaction,0.06349104
-Temperature,0.08496744
-Pressure (hPa),0.052281443
-Cloud_cover (%),0.046636276
-Wind_speed_10m (km/h),0.052272074
-Shortwave_radiation (W/m²),0.06281707
-direct_radiation (W/m²),0.06893313
-diffuse_radiation (W/m²),0.06169371
-direct_normal_irradiance (W/m²),0.07781348
-Price,0.050171033
+direct_normal_irradiance (W/m²),0.09155204
+direct_radiation (W/m²),0.082272455
+Temperature,0.07971618
+temp_irradiance_interaction,0.07777725
+hour_sin,0.07393122
+hour_cos,0.07302912
+diffuse_radiation (W/m²),0.07230988
+Shortwave_radiation (W/m²),0.072177514
+Price,0.06643788
+Pressure (hPa),0.059844114
+Wind_speed_10m (km/h),0.05698202
+Cloud_cover (%),0.053351514
+heating_degree,0.051898666
+cooling_degree,0.048603844
+is_weekend,0.04011624
