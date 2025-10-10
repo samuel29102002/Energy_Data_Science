@@ -1,0 +1,8 @@
+feature,importance
+pv,0.7854317
+hour,0.067833275
+demand_lag_24,0.042387884
+demand_lag_1,0.03960761
+weekday,0.035774603
+Temperature,0.028964916
+is_weekend,0.0

@@ -1,0 +1,16 @@
+feature,importance
+hour_sin,0.10065574
+hour_cos,0.09564817
+Temperature,0.079220556
+heating_degree,0.06862826
+Price,0.06823159
+diffuse_radiation (W/m²),0.067320324
+direct_normal_irradiance (W/m²),0.06405701
+Wind_speed_10m (km/h),0.062142793
+Shortwave_radiation (W/m²),0.061701987
+Pressure (hPa),0.060624387
+temp_irradiance_interaction,0.05999147
+Cloud_cover (%),0.059359144
+is_weekend,0.058223363
+direct_radiation (W/m²),0.055442136
+cooling_degree,0.03875295
