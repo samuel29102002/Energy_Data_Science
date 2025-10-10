@@ -100,7 +100,7 @@ def fit_stat_model(
 
 
 def predict_stat(model: Any, steps: int) -> np.ndarray:
-    preds = forecast_arima(model, horizon=steps)
+    preds = forecast_arima(model, steps=steps)
     return np.asarray(preds, dtype=np.float32)
 
 
@@ -131,17 +131,11 @@ def forecast_one_day(
     xgb_params: Optional[Dict[str, Any]] = None,
     feature_cols: Optional[Sequence[str]] = None,
 ) -> pd.DataFrame:
-    """
-    Forecast one day using statistical and ML models.
-
-    # AUDIT: Ensures both stat_spec AND xgb_params are accepted and forwarded.
-    """
     data = ensure_timestamp(full_df)
     target_col = select_target(data, target)
     numeric_cols = list(feature_cols) if feature_cols else [
         col for col in data.select_dtypes(include=[np.number]).columns if col != target_col
     ]
-    # AUDIT: Numeric coercion for target
     data[target_col] = pd.to_numeric(data[target_col], errors="coerce")
 
     train_df = data[data["timestamp"] <= train_end].copy()
@@ -165,18 +159,12 @@ def forecast_one_day(
     stat_pred = predict_stat(stat_model, horizon)
 
     # Machine learning model
-    try:
-        X_train, y_train, _ = build_forecast_features(train_df, target_col, numeric_cols)
-        print(f"XGBoost training data: X_train.shape={X_train.shape}, y_train.shape={y_train.shape}")
-        ml_params = dict(xgb_params or {})
-        ml_model, _ = train_xgboost(X_train, y_train, params=ml_params, seed=ml_params.get("random_state", 42))
+    X_train, y_train, _ = build_forecast_features(train_df, target_col, numeric_cols)
+    ml_params = dict(xgb_params or {})
+    ml_model, _ = train_xgboost(X_train, y_train, params=ml_params, seed=ml_params.get("random_state", 42))
 
-        X_future, y_future, idx_future = build_forecast_features(future_df, target_col, numeric_cols)
-        ml_pred = predict_xgboost(ml_model, X_future)
-    except Exception as e:
-        print(f"XGBoost failed: {e}")
-        ml_pred = np.array([])
-        idx_future = pd.DatetimeIndex([])
+    X_future, y_future, idx_future = build_forecast_features(future_df, target_col, numeric_cols)
+    ml_pred = predict_xgboost(ml_model, X_future)
 
     # Baselines
     last_value = float(train_series.iloc[-1]) if not train_series.empty else np.nan
@@ -188,23 +176,13 @@ def forecast_one_day(
     records: List[pd.DataFrame] = []
 
     def append_model(name: str, preds: np.ndarray, pred_index: Sequence[pd.Timestamp]) -> None:
-        # AUDIT: Length guard - check before alignment
         if preds.size == 0 or len(pred_index) == 0:
             return
-
-        # Convert pred_index to naive if it has timezone
-        pred_index_naive = pred_index
-        if hasattr(pred_index, 'tz') and pred_index.tz is not None:
-            pred_index_naive = pred_index.tz_convert(None)
-        elif isinstance(pred_index, (list, tuple)) and len(pred_index) > 0 and hasattr(pred_index[0], 'tz') and pred_index[0].tz is not None:
-            pred_index_naive = [ts.tz_convert(None) if hasattr(ts, 'tz_convert') else ts for ts in pred_index]
-
-        # AUDIT: Strict alignment by index before DataFrame creation
         common_idx, aligned_true, aligned_pred = align_by_index(
             true_series.values,
             preds,
             true_series.index,
-            pred_index_naive,
+            pred_index,
         )
         if common_idx.empty:
             return
@@ -252,13 +230,8 @@ def rolling_forecast_7days(
     predictions = []
     metrics_rows = []
 
-    # Work backwards from the end for proper walk-forward validation
-    # Forecast day N using data up to day N-1
-    for idx in range(len(day_ranges) - 1, 0, -1):  # Start from last day, go backwards to day 2
-        day_start, _ = day_ranges[idx]
-        prev_day_start, _ = day_ranges[idx - 1]
-        train_end = prev_day_start + pd.Timedelta(hours=23)  # End of previous day
-
+    for idx, (day_start, _) in enumerate(day_ranges, start=1):
+        train_end = day_start - pd.Timedelta(hours=1)
         day_preds = forecast_one_day(
             df,
             train_end=train_end,
@@ -271,7 +244,7 @@ def rolling_forecast_7days(
         if day_preds.empty:
             continue
         day_preds = day_preds.copy()
-        day_preds["day_idx"] = idx + 1  # 1-based indexing
+        day_preds["day_idx"] = idx
         day_preds["forecast_day"] = day_start.date()
         predictions.append(day_preds)
 

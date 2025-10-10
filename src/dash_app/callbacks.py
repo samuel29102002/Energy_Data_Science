@@ -1,0 +1,659 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Dict, List, Optional
+
+import numpy as np
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+from dash import Dash, Input, Output, dcc, html, no_update
+
+from src.dash_app.ids import IDS
+from src.dash_app.layout import render_page
+from src.dash_app.utils import DashboardData, format_number
+
+
+@dataclass(frozen=True)
+class _OverviewSummary:
+    average_rmse: str
+    best_model: str
+    cost_savings: str
+    accuracy: str
+    summary: html.Div
+
+
+def _empty_figure(message: str) -> go.Figure:
+    fig = go.Figure()
+    fig.add_annotation(
+        text=message,
+        x=0.5,
+        y=0.5,
+        xref="paper",
+        yref="paper",
+        showarrow=False,
+        font=dict(color="#6b7280", size=16),
+    )
+    fig.update_xaxes(visible=False)
+    fig.update_yaxes(visible=False)
+    fig.update_layout(
+        template="plotly_white",
+        margin=dict(l=40, r=40, t=40, b=40),
+        height=400,
+    )
+    return fig
+
+
+def _apply_fig_style(fig: go.Figure, height: int = 420) -> go.Figure:
+    fig.update_layout(
+        template="plotly_white",
+        uirevision=True,
+        margin=dict(l=40, r=40, t=60, b=40),
+        height=height,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        hovermode="x unified",
+        autosize=True,
+    )
+    fig.update_xaxes(showgrid=True, gridcolor="rgba(0,0,0,0.08)")
+    fig.update_yaxes(showgrid=True, gridcolor="rgba(0,0,0,0.08)")
+    return fig
+
+
+def _filter_time_range(df: pd.DataFrame, start: Optional[str], end: Optional[str]) -> pd.DataFrame:
+    if df.empty or "timestamp" not in df.columns:
+        return df.copy()
+    filtered = df.copy()
+    start_ts = pd.to_datetime(start) if start else None
+    end_ts = pd.to_datetime(end) if end else None
+    if start_ts is not None:
+        filtered = filtered[filtered["timestamp"] >= start_ts]
+    if end_ts is not None:
+        end_boundary = end_ts + pd.Timedelta(days=1)
+        filtered = filtered[filtered["timestamp"] < end_boundary]
+    return filtered.reset_index(drop=True)
+
+
+def _format_schema_table(schema_df: pd.DataFrame, selected: Optional[List[str]] = None) -> tuple[list[dict], list[dict]]:
+    if schema_df.empty:
+        return [], []
+    df = schema_df.copy()
+    df["missing_pct"] = df["missing_pct"].fillna(0.0)
+    df["missing_pct"] = df["missing_pct"].round(2)
+    if selected:
+        selected_set = set(selected)
+        df["_selected"] = df["column"].isin(selected_set)
+        df = df.sort_values(["_selected", "missing_pct"], ascending=[False, False]).drop(columns=["_selected"])
+    else:
+        df = df.sort_values("missing_pct", ascending=False)
+    data = df.to_dict("records")
+    columns = [
+        {"name": "Column", "id": "column"},
+        {"name": "Dtype", "id": "dtype"},
+        {"name": "Missing %", "id": "missing_pct", "type": "numeric", "format": {"specifier": ".2f"}},
+    ]
+    return data, columns
+
+
+def _format_clean_log(log: List[Dict[str, object]]) -> List[html.Li]:
+    if not log:
+        return [html.Li("Keine Reinigungsschritte erforderlich.")]
+    items: List[html.Li] = []
+    for entry in log:
+        step = entry.get("step", "")
+        detail_parts: List[str] = []
+        for key, value in entry.items():
+            if key == "step" or value in (None, ""):
+                continue
+            detail_parts.append(f"{key}: {value}")
+        detail = " | ".join(map(str, detail_parts)) if detail_parts else ""
+        text = f"{step}" if not detail else f"{step} ({detail})"
+        items.append(html.Li(text))
+    return items
+
+
+def _build_overview_summary(data: DashboardData) -> _OverviewSummary:
+    metrics = data.overview_metrics
+    avg_rmse = format_number(metrics.get("average_rmse"), precision=3)
+    best_model = metrics.get("best_model") or "--"
+    best_model_rmse = format_number(metrics.get("best_model_rmse"), precision=3)
+    cost_savings = format_number(metrics.get("cost_savings"), suffix=" €")
+    accuracy = format_number(metrics.get("forecast_accuracy"), precision=1, as_percent=True)
+
+    start = data.summary_context.get("start_date")
+    end = data.summary_context.get("end_date")
+    start_str = start.strftime("%Y-%m-%d") if isinstance(start, pd.Timestamp) else "--"
+    end_str = end.strftime("%Y-%m-%d") if isinstance(end, pd.Timestamp) else "--"
+
+    summary = html.Div(
+        [
+            html.Div(f"Date range: {start_str} → {end_str}"),
+            html.Div(f"Models compared: {data.summary_context.get('model_count', 0)}"),
+            html.Div(f"Storage scenarios: {data.summary_context.get('scenario_count', 0)}"),
+            html.Div(f"Tables path: {data.summary_context.get('tables_path', '--')}", className="summary-path"),
+            html.Div(f"Best model RMSE: {best_model_rmse}"),
+        ],
+        className="summary-stack",
+    )
+
+    return _OverviewSummary(
+        average_rmse=avg_rmse,
+        best_model=best_model,
+        cost_savings=cost_savings,
+        accuracy=accuracy,
+        summary=summary,
+    )
+
+
+def _get_model_predictions(data: DashboardData, model: Optional[str]) -> pd.DataFrame:
+    if data.forecast_predictions.empty:
+        return pd.DataFrame()
+    if model and model in data.forecast_models:
+        filtered = data.forecast_predictions[data.forecast_predictions["model_name"] == model]
+        if not filtered.empty:
+            return filtered
+    if data.best_forecast_model:
+        fallback = data.forecast_predictions[data.forecast_predictions["model_name"] == data.best_forecast_model]
+        if not fallback.empty:
+            return fallback
+    return data.forecast_predictions
+
+
+def _forecast_metrics_bar(data: DashboardData) -> go.Figure:
+    metrics = data.forecast_metrics_summary
+    if metrics.empty:
+        return _empty_figure("No forecast metrics available")
+    display = metrics.dropna(subset=["model_name", "RMSE_mean"]).copy()
+    if display.empty:
+        return _empty_figure("No forecast metrics available")
+    display.sort_values("RMSE_mean", inplace=True)
+    fig = px.bar(
+        display,
+        x="model_name",
+        y="RMSE_mean",
+        color="RMSE_mean",
+        color_continuous_scale=["#00B386", "#1E90FF"],
+        labels={"model_name": "Model", "RMSE_mean": "RMSE"},
+        title="Mean RMSE by model",
+    )
+    return _apply_fig_style(fig, height=360)
+
+
+def register_callbacks(app: Dash, data: DashboardData) -> None:
+    overview_summary = _build_overview_summary(data)
+
+    @app.callback(
+        Output(IDS["routing"]["content"], "children"),
+        Input(IDS["routing"]["location"], "pathname"),
+    )
+    def _render_page(pathname: str) -> html.Div:
+        path = pathname or "/overview"
+        return render_page(path, data)
+
+    @app.callback(
+        Output(IDS["overview"]["kpi_rmse"], "children"),
+        Output(IDS["overview"]["kpi_best_model"], "children"),
+        Output(IDS["overview"]["kpi_cost_savings"], "children"),
+        Output(IDS["overview"]["kpi_accuracy"], "children"),
+        Output(IDS["overview"]["summary_text"], "children"),
+        Input(IDS["routing"]["location"], "pathname"),
+    )
+    def _populate_overview_kpis(pathname: str):
+        # KPIs are static for the data snapshot; ignore navigation other than ensuring page load
+        return (
+            overview_summary.average_rmse,
+            overview_summary.best_model,
+            overview_summary.cost_savings,
+            overview_summary.accuracy,
+            overview_summary.summary,
+        )
+
+    @app.callback(
+        Output(IDS["overview"]["timeseries_graph"], "figure"),
+        Input(IDS["overview"]["model_dropdown"], "value"),
+    )
+    def _overview_timeseries(model: Optional[str]):
+        df = _get_model_predictions(data, model)
+        if df.empty:
+            return _empty_figure("No forecast predictions available")
+        actual_candidates = ["Actual", "actual", "y_true", "target"]
+        pred_candidates = ["y_pred", "Prediction", "Predicted", "forecast"]
+        actual_col = next((col for col in actual_candidates if col in df.columns), None)
+        pred_col = next((col for col in pred_candidates if col in df.columns), None)
+        actual_series = pd.to_numeric(df[actual_col], errors="coerce") if actual_col else pd.Series(dtype=float)
+        pred_series = pd.to_numeric(df[pred_col], errors="coerce") if pred_col else pd.Series(dtype=float)
+        fig = go.Figure()
+        fig.add_trace(
+            go.Scatter(
+                x=df["timestamp"],
+                y=actual_series,
+                name="Actual",
+                mode="lines",
+                line=dict(color="#1E90FF", width=2.4),
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=df["timestamp"],
+                y=pred_series,
+                name="Predicted",
+                mode="lines",
+                line=dict(color="#F4B400", width=2, dash="dash"),
+            )
+        )
+        model_label = df["model_name"].iloc[0] if "model_name" in df.columns and not df["model_name"].isna().all() else model or data.best_forecast_model or "Selected model"
+        fig.update_layout(title=f"Actual vs predicted demand — {model_label}")
+        return _apply_fig_style(fig)
+
+    @app.callback(
+        Output(IDS["overview"]["metrics_graph"], "figure"),
+        Input(IDS["routing"]["location"], "pathname"),
+    )
+    def _overview_metrics(_: str):
+        return _forecast_metrics_bar(data)
+
+    @app.callback(
+        Output(IDS["ml"]["feature_importance"], "figure"),
+        Output(IDS["ml"]["residual_graph"], "figure"),
+        Output(IDS["ml"]["metrics_table"], "data"),
+        Input(IDS["ml"]["model_dropdown"], "value"),
+    )
+    def _ml_section(model: Optional[str]):
+        importance = data.ml_feature_importance
+        if importance.empty:
+            importance_fig = _empty_figure("No feature importance data")
+        else:
+            importance_fig = px.bar(
+                importance.head(15),
+                x="importance",
+                y="feature",
+                orientation="h",
+                color="importance",
+                color_continuous_scale=["#00B386", "#1E90FF"],
+                title="Feature importance",
+            )
+            importance_fig.update_yaxes(categoryorder="total ascending")
+            importance_fig = _apply_fig_style(importance_fig, height=480)
+
+        predictions = data.ml_split_predictions.copy()
+        residual_fig = _empty_figure("No predictions available")
+        if not predictions.empty and model and model in predictions.columns:
+            actual_candidates = ["Actual", "actual", "y_true", "target"]
+            actual_ml_col = next((col for col in actual_candidates if col in predictions.columns), None)
+            if actual_ml_col:
+                predictions["Actual"] = pd.to_numeric(predictions[actual_ml_col], errors="coerce")
+                predictions["Forecast"] = pd.to_numeric(predictions[model], errors="coerce")
+                predictions.dropna(subset=["Actual", "Forecast"], inplace=True)
+                if not predictions.empty:
+                    predictions["Residual"] = predictions["Forecast"] - predictions["Actual"]
+                    residual_fig = go.Figure()
+                    residual_fig.add_trace(
+                        go.Scatter(
+                            x=predictions["timestamp"],
+                            y=predictions["Residual"],
+                            mode="lines",
+                            name="Residual",
+                            line=dict(color="#F4B400"),
+                        )
+                    )
+                    residual_fig.add_hline(y=0, line_color="#6b7280", line_dash="dot")
+                    residual_fig.update_layout(title=f"Residuals over time — {model}")
+                    residual_fig = _apply_fig_style(residual_fig, height=360)
+
+        metrics = data.ml_split_metrics
+        table_data: List[dict] = []
+        if not metrics.empty:
+            filtered = metrics if "model_name" not in metrics.columns or not model else metrics[metrics["model_name"] == model]
+            if filtered.empty:
+                filtered = metrics
+            top_row = filtered.iloc[0]
+            table_data = [
+                {"metric": "Model", "value": top_row.get("model_name", model or "--")},
+                {"metric": "MAE", "value": format_number(top_row.get("MAE"))},
+                {"metric": "RMSE", "value": format_number(top_row.get("RMSE"))},
+                {"metric": "nRMSE", "value": format_number(top_row.get("nRMSE"))},
+            ]
+        return importance_fig, residual_fig, table_data
+
+    @app.callback(
+        Output(IDS["forecast"]["timeseries_graph"], "figure"),
+        Output(IDS["forecast"]["daily_error_graph"], "figure"),
+        Input(IDS["forecast"]["model_dropdown"], "value"),
+    )
+    def _forecast_section(model: Optional[str]):
+        df = _get_model_predictions(data, model)
+        if df.empty:
+            return _empty_figure("No forecast predictions available"), _empty_figure("No forecast metrics available")
+
+        fig = go.Figure()
+        actual_candidates = ["Actual", "actual", "y_true", "target"]
+        actual_forecast_col = next((col for col in actual_candidates if col in df.columns), None)
+        fig.add_trace(
+            go.Bar(
+                x=df["timestamp"],
+                y=pd.to_numeric(df[actual_forecast_col], errors="coerce") if actual_forecast_col else pd.Series(dtype=float),
+                name="Actual",
+                marker_color="#1E90FF",
+                opacity=0.75,
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=df["timestamp"],
+                y=pd.to_numeric(df["y_pred"], errors="coerce"),
+                name="Predicted",
+                mode="lines",
+                line=dict(color="#F4B400", width=2),
+            )
+        )
+        fig.update_layout(title=f"Daily forecast overlay — {df['model_name'].iloc[0] if 'model_name' in df.columns else model}")
+        fig = _apply_fig_style(fig, height=460)
+
+        daily = df.copy()
+        if "forecast_day" in daily.columns and actual_forecast_col:
+            daily["forecast_day"] = pd.to_datetime(daily["forecast_day"])
+            error_group = (
+                daily.groupby("forecast_day")
+                .apply(
+                    lambda g: np.sqrt(
+                        np.nanmean(
+                            (pd.to_numeric(g["y_pred"], errors="coerce") - pd.to_numeric(g[actual_forecast_col], errors="coerce"))
+                            ** 2
+                        )
+                    )
+                )
+                .dropna()
+            )
+        else:
+            error_group = pd.Series(dtype=float)
+        if error_group.empty:
+            error_fig = _empty_figure("No daily error data available")
+        else:
+            error_fig = px.bar(
+                error_group.reset_index(name="RMSE"),
+                x="forecast_day",
+                y="RMSE",
+                labels={"forecast_day": "Forecast day", "RMSE": "RMSE"},
+                title="Daily RMSE",
+                color="RMSE",
+                color_continuous_scale=["#00B386", "#1E90FF"],
+            )
+            error_fig = _apply_fig_style(error_fig, height=360)
+        return fig, error_fig
+
+    @app.callback(
+        Output(IDS["optimization"]["kpi_cost"], "children"),
+        Output(IDS["optimization"]["kpi_bought"], "children"),
+        Output(IDS["optimization"]["kpi_sold"], "children"),
+        Output(IDS["optimization"]["kpi_cycles"], "children"),
+        Output(IDS["optimization"]["soc_graph"], "figure"),
+        Output(IDS["optimization"]["energy_graph"], "figure"),
+        Input(IDS["optimization"]["scenario_dropdown"], "value"),
+    )
+    def _optimization_section(scenario: Optional[str]):
+        summary = data.storage_summary
+        if summary.empty:
+            empty_fig = _empty_figure("No storage optimisation data available")
+            return ("--", "--", "--", "--", empty_fig, empty_fig)
+        if scenario and scenario in summary["Scenario"].values:
+            scenario_row = summary[summary["Scenario"] == scenario].iloc[0]
+        else:
+            scenario_row = summary.iloc[0]
+
+        cost = format_number(scenario_row.get("Total_cost_EUR"), suffix=" €")
+        bought = format_number(scenario_row.get("Energy_bought_kWh"), suffix=" kWh")
+        sold = format_number(scenario_row.get("Energy_sold_kWh"), suffix=" kWh")
+        cycles = format_number(scenario_row.get("Battery_cycles"))
+
+        soc_fig = px.bar(
+            summary,
+            x="Scenario",
+            y=["SOC_min_kWh", "SOC_max_kWh"],
+            title="Battery state of charge",
+            labels={"value": "Energy (kWh)", "Scenario": "Scenario"},
+        )
+        soc_fig.update_layout(barmode="group")
+        if "Scenario" in summary.columns and not summary.empty:
+            highlight_mask = summary["Scenario"] == scenario_row.get("Scenario")
+            highlight_colors = ["#1E90FF" if flag else "#cbd5f5" for flag in highlight_mask]
+            for trace in soc_fig.data:
+                trace.update(marker_color=highlight_colors)
+        soc_fig = _apply_fig_style(soc_fig, height=360)
+
+        energy_fig = px.bar(
+            summary,
+            x="Scenario",
+            y=["Energy_bought_kWh", "Energy_sold_kWh"],
+            title="Grid import vs export",
+            labels={"value": "Energy (kWh)", "Scenario": "Scenario"},
+        )
+        energy_fig.update_layout(barmode="group")
+        if "Scenario" in summary.columns and not summary.empty:
+            highlight_mask = summary["Scenario"] == scenario_row.get("Scenario")
+            highlight_colors = ["#00B386" if flag else "#c4f5e5" for flag in highlight_mask]
+            for trace in energy_fig.data:
+                trace.update(marker_color=highlight_colors)
+        energy_fig = _apply_fig_style(energy_fig, height=360)
+
+        return cost, bought, sold, cycles, soc_fig, energy_fig
+
+    @app.callback(
+        Output(IDS["data"]["time_series"], "figure"),
+        Output(IDS["data"]["missing_heatmap"], "figure"),
+        Output(IDS["data"]["missing_summary"], "children"),
+        Output(IDS["data"]["summary_stats"], "data"),
+        Output(IDS["data"]["summary_stats"], "columns"),
+        Output(IDS["data"]["schema_table"], "data"),
+        Output(IDS["data"]["schema_table"], "columns"),
+        Output(IDS["data"]["raw_head"], "data"),
+        Output(IDS["data"]["raw_head"], "columns"),
+        Output(IDS["data"]["totals_rows"], "children"),
+        Output(IDS["data"]["totals_range"], "children"),
+        Output(IDS["data"]["totals_missing"], "children"),
+        Output(IDS["data"]["clean_log"], "children"),
+        Input(IDS["data"]["date_range"], "start_date"),
+        Input(IDS["data"]["date_range"], "end_date"),
+        Input(IDS["data"]["variable_select"], "value"),
+        Input(IDS["data"]["show_mode"], "value"),
+    )
+    def _data_page_update(start_date: Optional[str], end_date: Optional[str], variables, mode: Optional[str]):
+        raw_df = data.raw_dataset.copy()
+        clean_df = data.cleaned_dataset.copy()
+
+        if raw_df.empty:
+            empty_fig = _empty_figure("Keine Quelldaten verfügbar")
+            clean_log = _format_clean_log(data.cleaning_log)
+            return (
+                empty_fig,
+                empty_fig,
+                html.Span("Keine Daten geladen."),
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                "0",
+                "--",
+                "0",
+                clean_log,
+            )
+
+        if isinstance(variables, str):
+            selected = [variables]
+        elif isinstance(variables, list):
+            selected = [str(v) for v in variables if isinstance(v, str)]
+        else:
+            selected = []
+
+        available_columns = [col for col in raw_df.columns if col != "timestamp"]
+        if not selected:
+            priority = [col for col in available_columns if col.lower() in {"demand", "pv"}]
+            selected = priority or available_columns[: min(3, len(available_columns))]
+
+        raw_filtered = _filter_time_range(raw_df, start_date, end_date)
+        clean_filtered = _filter_time_range(clean_df, start_date, end_date)
+
+        show_mode = (mode or "overlay").lower()
+
+        # --- Time series figure -------------------------------------------------
+        time_series_fig: go.Figure
+        if raw_filtered.empty and (show_mode != "cleaned" or clean_filtered.empty):
+            time_series_fig = _empty_figure("Keine Daten für den ausgewählten Zeitraum")
+        else:
+            time_series_fig = go.Figure()
+            palette = ["#1E90FF", "#00B386", "#F4B400", "#EF6C00", "#8E24AA"]
+            for idx, col in enumerate(selected):
+                color = palette[idx % len(palette)]
+                if show_mode in {"raw", "overlay"} and col in raw_filtered.columns:
+                    time_series_fig.add_trace(
+                        go.Scatter(
+                            x=raw_filtered["timestamp"],
+                            y=pd.to_numeric(raw_filtered[col], errors="coerce"),
+                            name=f"{col} (raw)",
+                            mode="lines",
+                            line=dict(color=color, width=2.2, dash="solid"),
+                        )
+                    )
+                if show_mode in {"cleaned", "overlay"} and col in clean_filtered.columns:
+                    time_series_fig.add_trace(
+                        go.Scatter(
+                            x=clean_filtered["timestamp"],
+                            y=pd.to_numeric(clean_filtered[col], errors="coerce"),
+                            name=f"{col} (cleaned)",
+                            mode="lines",
+                            line=dict(color=color, width=2.0, dash="dot"),
+                        )
+                    )
+            time_series_fig.update_layout(title="Zeitreihenvergleich")
+            time_series_fig = _apply_fig_style(time_series_fig, height=440)
+            time_series_fig.update_layout(uirevision="data-timeseries")
+
+        # --- Missing heatmap ----------------------------------------------------
+        subset_cols = [col for col in selected if col in raw_filtered.columns]
+        if not subset_cols:
+            subset_cols = [col for col in available_columns if col in raw_filtered.columns][:3]
+        if raw_filtered.empty or not subset_cols:
+            missing_fig = _empty_figure("Keine Daten für Missingness-Analyse")
+            missing_summary = html.Span("Keine fehlenden Werte im ausgewählten Zeitraum.")
+        else:
+            indexed = raw_filtered.set_index("timestamp")
+            missing_ratio = indexed[subset_cols].isna().mean(axis=1)
+            if missing_ratio.empty:
+                missing_fig = _empty_figure("Keine fehlenden Werte im ausgewählten Zeitraum")
+                missing_summary = html.Span("Keine fehlenden Werte im ausgewählten Zeitraum.")
+            else:
+                frame = missing_ratio.to_frame("missing")
+                frame["date"] = frame.index.date
+                frame["hour"] = frame.index.hour
+                pivot = frame.pivot_table(index="date", columns="hour", values="missing", aggfunc="mean").fillna(0.0)
+                hours = [f"{int(h):02d}:00" for h in pivot.columns]
+                dates = [str(idx) for idx in pivot.index]
+                missing_fig = go.Figure(
+                    data=
+                    [
+                        go.Heatmap(
+                            z=pivot.values,
+                            x=hours,
+                            y=dates,
+                            colorscale="Blues",
+                            colorbar=dict(title="Missing-Anteil"),
+                            zmin=0,
+                            zmax=1,
+                        )
+                    ]
+                )
+                missing_fig.update_layout(
+                    template="plotly_white",
+                    margin=dict(l=60, r=20, t=40, b=60),
+                    height=420,
+                    xaxis_title="Stunde",
+                    yaxis_title="Datum",
+                    autosize=True,
+                    uirevision="data-missing",
+                )
+                total_rows = len(raw_filtered)
+                summary_items = []
+                for col in subset_cols:
+                    count = int(raw_filtered[col].isna().sum())
+                    if count == 0:
+                        continue
+                    pct = (count / total_rows) * 100 if total_rows else 0
+                    summary_items.append(html.Li(f"{col}: {count} Werte ({pct:.2f}%)"))
+                missing_summary = html.Ul(summary_items or [html.Li("Keine fehlenden Werte in den ausgewählten Spalten.")])
+
+        # --- Summary statistics -------------------------------------------------
+        summary_data: List[dict]
+        summary_columns: List[dict]
+        stats_df = data.descriptive_stats.copy()
+        if stats_df.empty:
+            summary_data = []
+            summary_columns = []
+        else:
+            working = stats_df.copy()
+            if "variable" in working.columns and selected:
+                filtered = working[working["variable"].isin(selected)]
+                if not filtered.empty:
+                    working = filtered
+            working = working.reset_index(drop=True)
+            numeric_cols = working.select_dtypes(include=["number"]).columns
+            if not working.empty and len(numeric_cols) > 0:
+                working.loc[:, numeric_cols] = working.loc[:, numeric_cols].round(3)
+            summary_data = working.to_dict("records")
+            summary_columns = [{"name": col.replace("_", " ").title(), "id": col} for col in working.columns]
+
+        # --- Schema table -------------------------------------------------------
+        schema_data, schema_columns = _format_schema_table(data.raw_schema, selected)
+
+        # --- Data sample --------------------------------------------------------
+        table_source = clean_filtered if show_mode == "cleaned" else raw_filtered
+        table_display_cols = ["timestamp"] + [col for col in selected if col in table_source.columns]
+        if not table_display_cols:
+            table_display_cols = table_source.columns.tolist()
+        table_df = table_source.head(10)[table_display_cols].copy()
+        numeric_cols = table_df.select_dtypes(include=["number"]).columns
+        table_df.loc[:, numeric_cols] = table_df.loc[:, numeric_cols].round(3)
+        table_data = table_df.to_dict("records")
+        table_columns = [{"name": col, "id": col} for col in table_df.columns]
+
+        # --- Totals -------------------------------------------------------------
+        raw_rows = len(raw_filtered)
+        clean_rows = len(clean_filtered)
+        totals_rows = f"{raw_rows:,} raw | {clean_rows:,} cleaned".replace(",", " ")
+        if raw_filtered.empty:
+            totals_range = "--"
+        else:
+            start_val = raw_filtered["timestamp"].min()
+            end_val = raw_filtered["timestamp"].max()
+            totals_range = f"{start_val:%Y-%m-%d %H:%M} → {end_val:%Y-%m-%d %H:%M}"
+        missing_count = 0
+        if subset_cols and raw_rows:
+            missing_count = int(raw_filtered[subset_cols].isna().sum().sum())
+        totals_missing = f"{missing_count:,}".replace(",", " ") if missing_count else "0"
+
+        clean_log_children = _format_clean_log(data.cleaning_log)
+
+        return (
+            time_series_fig,
+            missing_fig,
+            missing_summary,
+            summary_data,
+            summary_columns,
+            schema_data,
+            schema_columns,
+            table_data,
+            table_columns,
+            totals_rows,
+            totals_range,
+            totals_missing,
+            clean_log_children,
+        )
+
+    @app.callback(
+        Output(IDS["data"]["download_target"], "data"),
+        Input(IDS["data"]["download_cleaned"], "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def _download_cleaned_dataset(n_clicks):
+        if not n_clicks or data.cleaned_dataset.empty:
+            return no_update
+        return dcc.send_data_frame(data.cleaned_dataset.to_csv, "cleaned_dataset.csv", index=False)
