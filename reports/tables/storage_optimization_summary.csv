@@ -1,0 +1,3 @@
+Scenario,Total_cost_EUR,Energy_bought_kWh,Energy_sold_kWh,Battery_cycles,SOC_max_kWh,SOC_min_kWh
+PV_low,3.9,42.27,0.0,1.23,10.0,0.0
+PV_high,3.17,35.15,0.0,1.23,10.0,0.0
