@@ -1,0 +1,68 @@
+{
+  "notebook_errors": {
+    "01_visualization.ipynb": [],
+    "02_project_planning.ipynb": [],
+    "03_visualization.ipynb": [],
+    "04_pv_cleaning.ipynb": [],
+    "05_feature_engineering.ipynb": [],
+    "06_ts_decomposition.ipynb": [],
+    "07_stats_models_ARMA.ipynb": []
+  },
+  "assets": {
+    "timeseries_main": {
+      "path": "/Users/samuel/EDS/Energy_Data_Science/reports/figures/01_demand_pv_timeseries.png",
+      "generated": true,
+      "notes": []
+    },
+    "timeseries_daily": {
+      "path": "/Users/samuel/EDS/Energy_Data_Science/reports/figures/01_demand_pv_daily_sample.png",
+      "generated": true,
+      "notes": []
+    },
+    "diurnal_profile": {
+      "path": "/Users/samuel/EDS/Energy_Data_Science/reports/figures/02_demand_diurnal_profile.png",
+      "generated": true,
+      "notes": []
+    },
+    "weekday_heatmap": {
+      "path": "/Users/samuel/EDS/Energy_Data_Science/reports/figures/02_demand_weekday_heatmap.png",
+      "generated": true,
+      "notes": []
+    },
+    "seasonality_stl": {
+      "path": "/Users/samuel/EDS/Energy_Data_Science/reports/figures/03_demand_seasonality_stl.png",
+      "generated": true,
+      "notes": []
+    },
+    "missingness_heatmap": {
+      "path": "/Users/samuel/EDS/Energy_Data_Science/reports/figures/04_missingness_heatmap.png",
+      "generated": true,
+      "notes": []
+    },
+    "feature_stats": {
+      "path": "/Users/samuel/EDS/Energy_Data_Science/reports/tables/05_feature_stats.csv",
+      "generated": true,
+      "notes": []
+    },
+    "feature_importance": {
+      "path": "/Users/samuel/EDS/Energy_Data_Science/reports/figures/05_feature_importance.png",
+      "generated": true,
+      "notes": []
+    },
+    "baseline_diagnostics": {
+      "path": "/Users/samuel/EDS/Energy_Data_Science/reports/figures/06_baseline_diagnostics.png",
+      "generated": true,
+      "notes": []
+    },
+    "pv_gap_stats": {
+      "path": "/Users/samuel/EDS/Energy_Data_Science/reports/tables/04_pv_gap_stats.csv",
+      "generated": true,
+      "notes": []
+    },
+    "kpis": {
+      "path": "/Users/samuel/EDS/Energy_Data_Science/reports/tables/07_kpis.csv",
+      "generated": true,
+      "notes": []
+    }
+  }
+}

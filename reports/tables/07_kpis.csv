@@ -1,0 +1,5 @@
+kpi,value,unit,description
+Mean demand,0.531,kWh,Average hourly demand across cleaned dataset
+Peak demand hour,19:00,hour,Hour of day with highest mean demand
+PV self-consumption,124.21,%,Share of demand covered by PV output
+Overall missingness,5.13,%,Share of missing entries in raw dataset

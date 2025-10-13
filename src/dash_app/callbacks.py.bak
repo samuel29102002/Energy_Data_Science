@@ -40,6 +40,8 @@ def _empty_figure(message: str) -> go.Figure:
         template="plotly_white",
         margin=dict(l=40, r=40, t=40, b=40),
         height=400,
+        font=dict(family="Inter, system-ui, -apple-system, sans-serif"),
+        title_font=dict(family="Inter, system-ui, -apple-system, sans-serif", size=18, color="#94a3b8"),
     )
     return fig
 
@@ -52,6 +54,9 @@ def _apply_fig_style(fig: go.Figure, height: int = 420) -> go.Figure:
         height=height,
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         hovermode="x unified",
+        autosize=True,
+        font=dict(family="Inter, system-ui, -apple-system, sans-serif"),
+        title_font=dict(family="Inter, system-ui, -apple-system, sans-serif", size=20, color="#0f172a"),
     )
     fig.update_xaxes(showgrid=True, gridcolor="rgba(0,0,0,0.08)")
     fig.update_yaxes(showgrid=True, gridcolor="rgba(0,0,0,0.08)")
@@ -525,6 +530,7 @@ def register_callbacks(app: Dash, data: DashboardData) -> None:
                     )
             time_series_fig.update_layout(title="Zeitreihenvergleich")
             time_series_fig = _apply_fig_style(time_series_fig, height=440)
+            time_series_fig.update_layout(uirevision="data-timeseries")
 
         # --- Missing heatmap ----------------------------------------------------
         subset_cols = [col for col in selected if col in raw_filtered.columns]
@@ -560,12 +566,12 @@ def register_callbacks(app: Dash, data: DashboardData) -> None:
                         )
                     ]
                 )
+                missing_fig = _apply_fig_style(missing_fig, height=420)
                 missing_fig.update_layout(
-                    template="plotly_white",
                     margin=dict(l=60, r=20, t=40, b=60),
-                    height=420,
                     xaxis_title="Stunde",
                     yaxis_title="Datum",
+                    uirevision="data-missing",
                 )
                 total_rows = len(raw_filtered)
                 summary_items = []

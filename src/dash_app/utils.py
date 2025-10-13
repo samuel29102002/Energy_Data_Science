@@ -189,12 +189,23 @@ def load_dashboard_data(tables_path: Optional[Path] = None) -> DashboardData:
         start_date = forecast_predictions["timestamp"].min()
         end_date = forecast_predictions["timestamp"].max()
 
+    raw_rows = int(len(raw_dataset)) if not raw_dataset.empty else 0
+    clean_rows = int(len(cleaned_dataset)) if not cleaned_dataset.empty else 0
+    feature_count = int(len([col for col in cleaned_dataset.columns if col != "timestamp"])) if not cleaned_dataset.empty else int(len([col for col in raw_dataset.columns if col != "timestamp"]))
+    missing_ratio = None
+    if not raw_dataset.empty and raw_dataset.size > 0:
+        missing_ratio = float(raw_dataset.isna().sum().sum() / raw_dataset.size)
     summary_context: Dict[str, Any] = {
         "start_date": start_date,
         "end_date": end_date,
         "model_count": len(forecast_models),
         "scenario_count": len(storage_scenarios),
         "tables_path": str(path),
+        "raw_rows": raw_rows,
+        "clean_rows": clean_rows,
+        "feature_count": feature_count,
+        "missing_ratio": missing_ratio,
+        "clean_steps": len(cleaning.log),
     }
 
     descriptive_stats = _read_csv(path / "task5_descriptive_stats.csv")

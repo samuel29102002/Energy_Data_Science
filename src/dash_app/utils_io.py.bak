@@ -73,19 +73,3 @@ def save_csv_safe(df: pd.DataFrame, path: Union[str, Path], index: bool = False)
         df.to_csv(p, index=index)
     except Exception as exc:
         print(f"⚠️ Error saving {p}: {exc}")
-
-
-def load_parquet_safe(path: Union[str, Path], columns: Optional[Iterable[str]] = None) -> pd.DataFrame:
-    """Load a parquet file with graceful failure handling."""
-
-    p = Path(path)
-    if not p.exists():
-        return pd.DataFrame(columns=columns or [])
-    try:
-        return pd.read_parquet(p, columns=list(columns) if columns else None)
-    except Exception as exc:
-        print(f"⚠️ Error loading parquet {p}: {exc}")
-        return pd.DataFrame(columns=columns or [])
-
-
-__all__ = ["load_csv_safe", "save_csv_safe", "load_parquet_safe"]

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from pathlib import Path
+from typing import Dict, List, Optional, Sequence
 
 import numpy as np
 import pandas as pd
@@ -12,6 +13,25 @@ from dash import Dash, Input, Output, dcc, html, no_update
 from src.dash_app.ids import IDS
 from src.dash_app.layout import render_page
 from src.dash_app.utils import DashboardData, format_number
+from src.dash_app.data_processing import (
+    compute_missing_summary,
+    compute_schema_table,
+    compute_totals_summary,
+    filter_time_range,
+)
+from src.dash_app.utils_figures import (
+    make_demand_pv_timeseries,
+    make_demand_seasonality,
+    make_missingness_heatmap,
+    placeholder_fig,
+)
+from src.dash_app.utils_io import load_csv_safe
+
+
+ROOT = Path(__file__).resolve().parents[2]
+REPORTS_DIR = ROOT / "reports"
+FIGURES_DIR = REPORTS_DIR / "figures"
+TABLES_DIR = REPORTS_DIR / "tables"
 
 
 @dataclass(frozen=True)
@@ -40,6 +60,8 @@ def _empty_figure(message: str) -> go.Figure:
         template="plotly_white",
         margin=dict(l=40, r=40, t=40, b=40),
         height=400,
+        font=dict(family="Inter, system-ui, -apple-system, sans-serif"),
+        title_font=dict(family="Inter, system-ui, -apple-system, sans-serif", size=18, color="#94a3b8"),
     )
     return fig
 
@@ -53,24 +75,149 @@ def _apply_fig_style(fig: go.Figure, height: int = 420) -> go.Figure:
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         hovermode="x unified",
         autosize=True,
+        font=dict(family="Inter, system-ui, -apple-system, sans-serif"),
+        title_font=dict(family="Inter, system-ui, -apple-system, sans-serif", size=20, color="#0f172a"),
     )
     fig.update_xaxes(showgrid=True, gridcolor="rgba(0,0,0,0.08)")
     fig.update_yaxes(showgrid=True, gridcolor="rgba(0,0,0,0.08)")
     return fig
 
 
-def _filter_time_range(df: pd.DataFrame, start: Optional[str], end: Optional[str]) -> pd.DataFrame:
-    if df.empty or "timestamp" not in df.columns:
-        return df.copy()
-    filtered = df.copy()
-    start_ts = pd.to_datetime(start) if start else None
-    end_ts = pd.to_datetime(end) if end else None
-    if start_ts is not None:
-        filtered = filtered[filtered["timestamp"] >= start_ts]
-    if end_ts is not None:
-        end_boundary = end_ts + pd.Timedelta(days=1)
-        filtered = filtered[filtered["timestamp"] < end_boundary]
-    return filtered.reset_index(drop=True)
+def _make_profile_overlay(df: pd.DataFrame) -> go.Figure:
+    if df.empty or not {"timestamp", "Demand", "pv"}.issubset(df.columns):
+        return placeholder_fig("No profile data available")
+    work = df.copy()
+    work["timestamp"] = pd.to_datetime(work["timestamp"], errors="coerce")
+    work = work.dropna(subset=["timestamp"])
+    work["hour"] = work["timestamp"].dt.hour
+    aggregated = (
+        work.groupby("hour")[["Demand", "pv"]]
+        .mean()
+        .reset_index()
+        .sort_values("hour")
+    )
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=aggregated["hour"],
+            y=aggregated["Demand"],
+            name="Demand",
+            mode="lines+markers",
+            line=dict(color="#1E90FF", width=2.4),
+            marker=dict(size=7, color="#1E90FF"),
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=aggregated["hour"],
+            y=aggregated["pv"],
+            name="PV",
+            mode="lines+markers",
+            line=dict(color="#2CA02C", width=2.2, dash="dash"),
+            marker=dict(size=7, color="#2CA02C"),
+        )
+    )
+    fig.update_layout(
+        title="Demand vs PV hourly profile",
+        xaxis_title="Hour of day",
+        yaxis_title="kWh",
+        template="plotly_white",
+        hovermode="x unified",
+        autosize=True,
+        height=420,
+        margin=dict(l=40, r=20, t=60, b=40),
+    )
+    fig.update_xaxes(dtick=1)
+    return fig
+
+
+def _load_table(name: str) -> pd.DataFrame:
+    path = TABLES_DIR / name
+    df = load_csv_safe(path)
+    if df.empty:
+        return df
+    return df.dropna(how="all").reset_index(drop=True)
+
+
+def _format_kpi_value(value: object, unit: str) -> str:
+    if value is None or (isinstance(value, float) and np.isnan(value)):
+        return "--"
+    if isinstance(value, (int, float)) and unit.strip() == "%":
+        return f"{value:.2f}%"
+    if isinstance(value, (int, float)) and unit:
+        return f"{value:.2f} {unit}".rstrip()
+    if isinstance(value, (int, float)):
+        return f"{value:.2f}".rstrip("0").rstrip(".")
+    return f"{value} {unit}".strip()
+
+
+def _build_overview_kpis(data: DashboardData) -> tuple[str, str, str, str]:
+    metrics = data.overview_metrics
+    return (
+        format_number(metrics.get("average_rmse"), precision=3),
+        metrics.get("best_model") or "--",
+        format_number(metrics.get("cost_savings"), suffix=" €"),
+        format_number(metrics.get("forecast_accuracy"), precision=1, as_percent=True),
+    )
+
+
+def _build_insights(clean_df: pd.DataFrame, limit: int = 5) -> html.Ul:
+    kpi_df = _load_table("07_kpis.csv")
+    feature_df = _load_table("05_feature_stats.csv")
+    items: List[html.Li] = []
+
+    if not kpi_df.empty:
+        kpi_map = {row["kpi"]: row for row in kpi_df.to_dict("records")}
+        if "Peak demand hour" in kpi_map:
+            val = kpi_map["Peak demand hour"].get("value")
+            items.append(html.Li(f"Peak demand occurs around {val}."))
+        if "Mean demand" in kpi_map:
+            val = _format_kpi_value(kpi_map["Mean demand"].get("value"), kpi_map["Mean demand"].get("unit", ""))
+            items.append(html.Li(f"Mean hourly demand is approximately {val}."))
+        if "PV self-consumption" in kpi_map:
+            val = _format_kpi_value(kpi_map["PV self-consumption"].get("value"), kpi_map["PV self-consumption"].get("unit", ""))
+            items.append(html.Li(f"PV covers about {val} of the demand."))
+        if "Overall missingness" in kpi_map:
+            val = _format_kpi_value(kpi_map["Overall missingness"].get("value"), kpi_map["Overall missingness"].get("unit", ""))
+            items.append(html.Li(f"Overall data missingness is {val}."))
+
+    if not feature_df.empty:
+        top_row = feature_df.iloc[0]
+        feature_name = top_row.get("feature")
+        corr_val = top_row.get("correlation_with_demand")
+        if feature_name:
+            if isinstance(corr_val, (int, float)) and not np.isnan(corr_val):
+                items.append(html.Li(f"{feature_name} shows the strongest correlation with demand ({corr_val:.2f})."))
+            else:
+                items.append(html.Li(f"{feature_name} is among the most informative features for demand prediction."))
+
+    if not clean_df.empty:
+        work = clean_df.copy()
+        if "timestamp" in work.columns:
+            work["timestamp"] = pd.to_datetime(work["timestamp"], errors="coerce")
+            work = work.dropna(subset=["timestamp"])  # type: ignore[call-arg]
+            work["weekday"] = work["timestamp"].dt.day_name()
+            work["hour"] = work["timestamp"].dt.hour
+            if {"Demand", "pv"}.issubset(work.columns):
+                midday = work[(work["hour"] >= 10) & (work["hour"] <= 16)]
+                if not midday.empty:
+                    pv_share_midday = midday["pv"].sum() / midday["Demand"].sum() if midday["Demand"].sum() else np.nan
+                    if pv_share_midday and not np.isnan(pv_share_midday):
+                        items.append(html.Li(f"Midday PV covers roughly {pv_share_midday * 100:.1f}% of demand."))
+            weekday_load = work.groupby("weekday")["Demand"].mean().sort_values(ascending=False)
+            if not weekday_load.empty:
+                items.append(html.Li(f"{weekday_load.index[0]} shows the highest average demand."))
+
+    unique_items: List[str] = []
+    deduped: List[html.Li] = []
+    for li in items:
+        text = li.children if isinstance(li.children, str) else " ".join(map(str, li.children))
+        if text not in unique_items:
+            unique_items.append(text)
+            deduped.append(li)
+    if len(deduped) < 1:
+        deduped.append(html.Li("No insights available."))
+    return html.Ul(deduped[:limit], className="insight-list")
 
 
 def _format_schema_table(schema_df: pd.DataFrame, selected: Optional[List[str]] = None) -> tuple[list[dict], list[dict]]:
@@ -198,51 +345,37 @@ def register_callbacks(app: Dash, data: DashboardData) -> None:
         Input(IDS["routing"]["location"], "pathname"),
     )
     def _populate_overview_kpis(pathname: str):
-        # KPIs are static for the data snapshot; ignore navigation other than ensuring page load
-        return (
-            overview_summary.average_rmse,
-            overview_summary.best_model,
-            overview_summary.cost_savings,
-            overview_summary.accuracy,
-            overview_summary.summary,
+        mean_demand, peak_hour, pv_share, missing = _build_overview_kpis(data)
+        summary_block = html.Div(
+            [
+                overview_summary.summary,
+                html.Div("Key insights", className="summary-subtitle"),
+                _build_insights(data.cleaned_dataset),
+            ],
+            className="summary-wrapper",
         )
+        return mean_demand, peak_hour, pv_share, missing, summary_block
 
     @app.callback(
         Output(IDS["overview"]["timeseries_graph"], "figure"),
         Input(IDS["overview"]["model_dropdown"], "value"),
     )
-    def _overview_timeseries(model: Optional[str]):
-        df = _get_model_predictions(data, model)
-        if df.empty:
-            return _empty_figure("No forecast predictions available")
-        actual_candidates = ["Actual", "actual", "y_true", "target"]
-        pred_candidates = ["y_pred", "Prediction", "Predicted", "forecast"]
-        actual_col = next((col for col in actual_candidates if col in df.columns), None)
-        pred_col = next((col for col in pred_candidates if col in df.columns), None)
-        actual_series = pd.to_numeric(df[actual_col], errors="coerce") if actual_col else pd.Series(dtype=float)
-        pred_series = pd.to_numeric(df[pred_col], errors="coerce") if pred_col else pd.Series(dtype=float)
-        fig = go.Figure()
-        fig.add_trace(
-            go.Scatter(
-                x=df["timestamp"],
-                y=actual_series,
-                name="Actual",
-                mode="lines",
-                line=dict(color="#1E90FF", width=2.4),
-            )
-        )
-        fig.add_trace(
-            go.Scatter(
-                x=df["timestamp"],
-                y=pred_series,
-                name="Predicted",
-                mode="lines",
-                line=dict(color="#F4B400", width=2, dash="dash"),
-            )
-        )
-        model_label = df["model_name"].iloc[0] if "model_name" in df.columns and not df["model_name"].isna().all() else model or data.best_forecast_model or "Selected model"
-        fig.update_layout(title=f"Actual vs predicted demand — {model_label}")
-        return _apply_fig_style(fig)
+    def _overview_timeseries(selected_range: Optional[str]):
+        clean_df = data.cleaned_dataset.copy()
+        if clean_df.empty:
+            return _empty_figure("No cleaned dataset available")
+        clean_df = clean_df.copy()
+        if "timestamp" in clean_df.columns:
+            clean_df["timestamp"] = pd.to_datetime(clean_df["timestamp"], errors="coerce")
+            clean_df = clean_df.dropna(subset=["timestamp"]).sort_values("timestamp")
+        if selected_range in {"last_30", "last_90"} and "timestamp" in clean_df.columns:
+            end = clean_df["timestamp"].max()
+            delta = 30 if selected_range == "last_30" else 90
+            start = end - pd.Timedelta(days=delta)
+            mask = clean_df["timestamp"] >= start
+            clean_df = clean_df.loc[mask]
+        figure = make_demand_pv_timeseries(clean_df)
+        return figure
 
     @app.callback(
         Output(IDS["overview"]["metrics_graph"], "figure"),
@@ -381,6 +514,24 @@ def register_callbacks(app: Dash, data: DashboardData) -> None:
         return fig, error_fig
 
     @app.callback(
+        Output(IDS["overview"]["seasonality_graph"], "figure"),
+        Output(IDS["overview"]["profile_graph"], "figure"),
+        Input(IDS["routing"]["location"], "pathname"),
+    )
+    def _overview_seasonality(_: str):
+        clean_df = data.cleaned_dataset.copy()
+        if clean_df.empty:
+            empty = placeholder_fig("No data available")
+            return empty, empty
+        if "timestamp" in clean_df.columns:
+            clean_df["timestamp"] = pd.to_datetime(clean_df["timestamp"], errors="coerce")
+            clean_df = clean_df.dropna(subset=["timestamp"]).sort_values("timestamp")
+        seasonality = make_demand_seasonality(clean_df)
+        weekly_fig = seasonality.get("weekly") or placeholder_fig("No seasonality data")
+        profile_fig = _make_profile_overlay(clean_df)
+        return weekly_fig, profile_fig
+
+    @app.callback(
         Output(IDS["optimization"]["kpi_cost"], "children"),
         Output(IDS["optimization"]["kpi_bought"], "children"),
         Output(IDS["optimization"]["kpi_sold"], "children"),
@@ -490,8 +641,12 @@ def register_callbacks(app: Dash, data: DashboardData) -> None:
             priority = [col for col in available_columns if col.lower() in {"demand", "pv"}]
             selected = priority or available_columns[: min(3, len(available_columns))]
 
-        raw_filtered = _filter_time_range(raw_df, start_date, end_date)
-        clean_filtered = _filter_time_range(clean_df, start_date, end_date)
+        start_ts = pd.to_datetime(start_date) if start_date else None
+        end_ts = pd.to_datetime(end_date) if end_date else None
+        raw_filtered = filter_time_range(raw_df, start_ts, end_ts)
+        clean_filtered = filter_time_range(clean_df, start_ts, end_ts)
+        overall_missing_info = compute_missing_summary(raw_filtered)
+        missing_summary_dict = overall_missing_info.copy()
 
         show_mode = (mode or "overlay").lower()
 
@@ -536,50 +691,20 @@ def register_callbacks(app: Dash, data: DashboardData) -> None:
             missing_fig = _empty_figure("Keine Daten für Missingness-Analyse")
             missing_summary = html.Span("Keine fehlenden Werte im ausgewählten Zeitraum.")
         else:
-            indexed = raw_filtered.set_index("timestamp")
-            missing_ratio = indexed[subset_cols].isna().mean(axis=1)
-            if missing_ratio.empty:
-                missing_fig = _empty_figure("Keine fehlenden Werte im ausgewählten Zeitraum")
-                missing_summary = html.Span("Keine fehlenden Werte im ausgewählten Zeitraum.")
-            else:
-                frame = missing_ratio.to_frame("missing")
-                frame["date"] = frame.index.date
-                frame["hour"] = frame.index.hour
-                pivot = frame.pivot_table(index="date", columns="hour", values="missing", aggfunc="mean").fillna(0.0)
-                hours = [f"{int(h):02d}:00" for h in pivot.columns]
-                dates = [str(idx) for idx in pivot.index]
-                missing_fig = go.Figure(
-                    data=
-                    [
-                        go.Heatmap(
-                            z=pivot.values,
-                            x=hours,
-                            y=dates,
-                            colorscale="Blues",
-                            colorbar=dict(title="Missing-Anteil"),
-                            zmin=0,
-                            zmax=1,
-                        )
-                    ]
+            subset_df = raw_filtered[["timestamp"] + subset_cols] if "timestamp" in raw_filtered.columns else raw_filtered[subset_cols].copy()
+            missing_fig = make_missingness_heatmap(subset_df, export_path=None)
+            missing_summary_dict = compute_missing_summary(raw_filtered[subset_cols])
+            summary_items = [
+                html.Li(
+                    f"{col}: {count} Werte ({(count / missing_summary_dict['total_rows'] * 100):.2f}%)"
+                    if missing_summary_dict["total_rows"]
+                    else f"{col}: {count} fehlende Werte"
                 )
-                missing_fig.update_layout(
-                    template="plotly_white",
-                    margin=dict(l=60, r=20, t=40, b=60),
-                    height=420,
-                    xaxis_title="Stunde",
-                    yaxis_title="Datum",
-                    autosize=True,
-                    uirevision="data-missing",
-                )
-                total_rows = len(raw_filtered)
-                summary_items = []
-                for col in subset_cols:
-                    count = int(raw_filtered[col].isna().sum())
-                    if count == 0:
-                        continue
-                    pct = (count / total_rows) * 100 if total_rows else 0
-                    summary_items.append(html.Li(f"{col}: {count} Werte ({pct:.2f}%)"))
-                missing_summary = html.Ul(summary_items or [html.Li("Keine fehlenden Werte in den ausgewählten Spalten.")])
+                for col, count in missing_summary_dict["columns_with_missing"].items()
+            ]
+            if not summary_items:
+                summary_items = [html.Li("Keine fehlenden Werte in den ausgewählten Spalten.")]
+            missing_summary = html.Ul(summary_items, className="clean-log")
 
         # --- Summary statistics -------------------------------------------------
         summary_data: List[dict]
@@ -602,33 +727,31 @@ def register_callbacks(app: Dash, data: DashboardData) -> None:
             summary_columns = [{"name": col.replace("_", " ").title(), "id": col} for col in working.columns]
 
         # --- Schema table -------------------------------------------------------
-        schema_data, schema_columns = _format_schema_table(data.raw_schema, selected)
+        schema_source = compute_schema_table(raw_filtered if not raw_filtered.empty else raw_df)
+        schema_data, schema_columns = _format_schema_table(schema_source, selected)
 
         # --- Data sample --------------------------------------------------------
         table_source = clean_filtered if show_mode == "cleaned" else raw_filtered
-        table_display_cols = ["timestamp"] + [col for col in selected if col in table_source.columns]
+        table_columns_available = table_source.columns.tolist()
+        table_display_cols: List[str] = []
+        if "timestamp" in table_columns_available:
+            table_display_cols.append("timestamp")
+        table_display_cols.extend([col for col in selected if col in table_columns_available and col not in table_display_cols])
         if not table_display_cols:
-            table_display_cols = table_source.columns.tolist()
-        table_df = table_source.head(10)[table_display_cols].copy()
+            table_display_cols = table_columns_available[: min(5, len(table_columns_available))]
+        table_df = table_source.loc[:, table_display_cols].head(10).copy() if table_display_cols else table_source.head(10).copy()
         numeric_cols = table_df.select_dtypes(include=["number"]).columns
         table_df.loc[:, numeric_cols] = table_df.loc[:, numeric_cols].round(3)
         table_data = table_df.to_dict("records")
         table_columns = [{"name": col, "id": col} for col in table_df.columns]
-
         # --- Totals -------------------------------------------------------------
-        raw_rows = len(raw_filtered)
+        totals_info = compute_totals_summary(raw_filtered)
+        raw_rows = totals_info["rows"]
         clean_rows = len(clean_filtered)
         totals_rows = f"{raw_rows:,} raw | {clean_rows:,} cleaned".replace(",", " ")
-        if raw_filtered.empty:
-            totals_range = "--"
-        else:
-            start_val = raw_filtered["timestamp"].min()
-            end_val = raw_filtered["timestamp"].max()
-            totals_range = f"{start_val:%Y-%m-%d %H:%M} → {end_val:%Y-%m-%d %H:%M}"
-        missing_count = 0
-        if subset_cols and raw_rows:
-            missing_count = int(raw_filtered[subset_cols].isna().sum().sum())
-        totals_missing = f"{missing_count:,}".replace(",", " ") if missing_count else "0"
+        totals_range = totals_info.get("date_range", "--")
+        missing_count = overall_missing_info.get("total_missing", 0)
+        totals_missing = f"{int(missing_count):,}".replace(",", " ") if missing_count else "0"
 
         clean_log_children = _format_clean_log(data.cleaning_log)
 
@@ -657,3 +780,5 @@ def register_callbacks(app: Dash, data: DashboardData) -> None:
         if not n_clicks or data.cleaned_dataset.empty:
             return no_update
         return dcc.send_data_frame(data.cleaned_dataset.to_csv, "cleaned_dataset.csv", index=False)
+
+    app.logger.info("Registered %d callbacks", len(app.callback_map))
