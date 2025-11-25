@@ -31,78 +31,65 @@
 \usepackage{csvsimple}
 \usepackage{tikz}
 \usetikzlibrary{shapes.geometric, arrows.meta, positioning}
-	ikzset{
+\tikzset{
   startstop/.style={rectangle, rounded corners, minimum width=3.2cm, minimum height=1.0cm, text centered, draw=black, fill=red!20},
   io/.style={trapezium, trapezium stretches=true, trapezium left angle=70, trapezium right angle=110, minimum width=4cm, minimum height=1.0cm, text centered, draw=black, fill=blue!20},
   process/.style={rectangle, minimum width=4cm, minimum height=1.0cm, text centered, text width=4.6cm, draw=black, fill=orange!20},
   decision/.style={diamond, aspect=2.2, text centered, draw=black, fill=green!20, inner sep=1.2pt},
   arrow/.style={thick,-{Stealth[length=2.2mm,width=2.0mm]}}
 }
-% Currency symbol
-\usepackage[official]{eurosym}
+
 
 % Bibliography
 \usepackage[style=apa,backend=biber]{biblatex}
 \addbibresource{references.bib}
 
-% Header & Footer
-\pagestyle{fancy}
-\fancyhf{}
-\lhead{Energy Data Science: HEMS}
-\rhead{\leftmark}
-\cfoot{\thepage}
-
-% Paths for figures
-\graphicspath{{figures/}{../reports/figures/}{./}{../}}
-
-% Title Page
-\title{\textbf{Energy Data Science: Home Energy Management System (HEMS) Project}}
-\author{Samuel [Last Name]\\ITS8080 Energy Data Science}
-\date{\today}
+\title{ITS8080 Energy Data Science}
+\author{Samuel Heinrich}
+\date{October 13, 2025}
 
 \begin{document}
-\justifying
 \maketitle
-\thispagestyle{empty}
 
-\begin{abstract}
-This project develops an end-to-end analytics workflow for a residential Home Energy Management System (HEMS) leveraging a historical dataset of household electricity demand, photovoltaic (PV) generation, and exogenous variables. The methodology spans data exploration, cleaning, feature engineering, time-series decomposition, statistical modeling (ARMA/ARIMA), and machine-learning forecasting, culminating in a rolling forecasting pipeline and a battery storage optimization for cost reduction. Using visual diagnostics and tabular summaries exported from Notebooks 01--11, we quantify seasonality (diurnal/weekly), examine missingness and PV corrections, rank predictive features, and compare baseline/statistical vs. ML performance. Optimization experiments indicate that a modest battery can lower energy costs and increase PV self-consumption, with sensitivity to PV availability and price signals.
-\end{abstract}
+\section{Introduction \\ Digital transformation of the energy sector}
+\subsection{Dataset familiarization (variables, units, resolution)}
+We work with hourly time series (local time; energy per hour in kWh): \emph{timestamp}, \emph{demand} (household load, kWh), \emph{price} (electricity tariff, e.g. \euro{}/kWh), photovoltaic generation, kWh) and \emph{weather} variables (e.g. temperature in \si{\degreeCelsius}). These variables align with typical HEMS use cases: demand is the optimization target, PV and weather act as exogenous drivers, and price informs cost-aware control.
 
-\clearpage
-\tableofcontents
-\listoffigures
-\listoftables
-\clearpage
+\subsection{Visual check: PV, demand, price (few-day window)}
+We reference existing figures from the project to illustrate typical patterns. Figure~\ref{fig:timeseries_main} overlays demand and photovoltaic energy; Figure~\ref{fig:timeseries_week} zooms in a representative week; price is aligned to the same window in Figure~\ref{fig:price}.
 
-%===========================
-% 1. Introduction
-%===========================
-\section{Introduction}
-\subsection{Context and problem framing}
-Smart electrification and distributed energy resources (DERs) are reshaping residential energy systems. Home Energy Management Systems (HEMS) coordinate flexible demand, PV production, and storage subject to price signals and comfort constraints. Robust short-horizon forecasting and data-driven optimization are essential to minimize energy costs and emissions while safeguarding user comfort. This report implements a complete data science workflow: exploration, cleaning, feature engineering, time-series decomposition, statistical and machine learning forecasting, and optimal battery dispatch.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{figures/01_demand_pv_timeseries.png}
+  \caption{Demand and PV overview time series (project figure).}
+  \label{fig:timeseries_main}
+\end{figure}
 
-\subsection{Digitalization and household energy (Task 1)}
-Digitalization transforms the electricity sector by enabling high-frequency sensing, edge analytics, and automated control across the value chain---from demand response to DER orchestration \cite{IEA2017,Palensky2011}. In households, improved forecasts drive better scheduling of storage and flexible loads, enabling higher PV self-consumption and reduced peak imports. However, digitalization also raises concerns about data privacy, algorithmic bias, and resilience, motivating transparent methods, strong data governance, and robust validation.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{figures/01_demand_pv_daily_sample.png}
+  \caption{One-week sample with diurnal PV peaks and morning/evening demand peaks (project figure).}
+  \label{fig:timeseries_week}
+\end{figure}
 
-\subsection{Initial familiarization and visual inspection (Task 1)}
-Visual checks of demand and PV confirmed expected diurnal cycles and weekday-weekend differences; PV is near zero overnight and peaks around solar noon. Correlations indicate temperature and calendar relevance, consistent with prior studies \cite{Islam2017,Antonanzas2016}. Price (if available) typically co-varies with demand/scarcity and can be used as an exogenous driver or downstream in optimization.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{figures/task3_fig1_timeseries_overlay.png}
+  \caption{Overlay of demand, PV, and price over a few days (project figure).}
+  \label{fig:price}
+\end{figure}
 
-%===========================
-% 2. Methodology & Planning
-%===========================
-\section{Methodology and Project Planning}
-\subsection{Dataset, variables, and units (Task 2)}
-We use the dataset at \texttt{data/raw/train\_252145.csv} with timestamped household demand (kWh), PV generation (kWh), and auxiliary variables (e.g., temperature). Engineered features (calendar fields, lags, moving statistics) are saved to \texttt{data/processed/task5\_features.parquet}. Curated tables and figures are under \texttt{reports/tables} and \texttt{reports/figures}.
+Observed structure is consistent with literature: PV is near zero at night and peaks around solar noon; demand shows morning/evening peaks; prices often co-move with scarcity and demand \cite{IEA2017,Palensky2011}.
 
-	extbf{Target and covariates:} Demand (target, kWh) reflects energy within each hour; PV (exogenous, kWh) is nonnegative and near zero at night; temperature and calendar indicators are key drivers; market signals (price) inform optimization and may serve as exogenous predictors.
+\subsection{How digitalization transforms household energy}
+Digitalization enables high-frequency sensing, edge analytics, and automated control across the household and the broader grid, facilitating demand response and DER orchestration \cite{IEA2017,Palensky2011}. For HEMS, improved short-horizon forecasts support better scheduling of storage and flexible loads, increasing PV self-consumption and reducing peak imports. These opportunities come with the need for strong data governance, transparent models, and robust validation.
 
-\subsection{Lifecycle and mapping to tasks (Task 2)}
-We adopt CRISP--DM \cite{CRISPDM2000}: business/data understanding; preparation; modeling; evaluation; deployment. The project plan (Figure~\ref{fig:lifecycle}) maps tasks 01--11: Task 1 (context) and Task 3 (EDA) support understanding; Task 4 (cleaning) finalizes preparation; Tasks 5--8 (features/statistics/ML) constitute modeling; Task 9 (pipeline) and Task 10 (exogenous models) provide evaluation and refinement; Task 11 (optimization) deploys into decision support.
+\subsection*{Why work with solar generation data?}
+	\textbf{Importance.} PV is intermittent and weather-driven; accurate short-horizon forecasts reduce costs and emissions and improve operational decisions \cite{Islam2017,Antonanzas2016}. \\ \textbf{Use in private and business sectors.} Private: self-consumption maximization, storage/inverter sizing, tariff optimization. Business: portfolio hedging, flexible asset scheduling, participation in demand response and wholesale markets, and asset planning.
 
-\subsection{Effort distribution, risks, and assumptions (Task 2)}
-Effort concentrated on data preparation and feature engineering (Tasks 4--5), which substantially determine forecasting quality \cite{Hyndman2021}. Walk-forward evaluation (Tasks 7--9) mitigated leakage. Risks: missingness and PV anomalies; covariate shift/seasonal drift; overfitting in ML. Mitigations: robust cleaning, regularization, out-of-sample validation, and diagnostic visualization. Where available, weather reanalysis (e.g., ERA5) and market prices enhance accuracy and inform optimization \cite{Hersbach2020}. Assumptions include correct timestamp alignment (local time, no DST ambiguity) and representative training periods.
-
+\section{Data science lifecycle (project planning)}
+\subsection{Project plan diagram (CRISP-DM)}
+The flowchart in Figure~\ref{fig:lifecycle} maps CRISP--DM to our dataset-specific steps.
 \begin{figure}[H]
   \centering
   \begin{tikzpicture}[node distance=1.4cm]
@@ -137,70 +124,23 @@ Effort concentrated on data preparation and feature engineering (Tasks 4--5), wh
   \label{fig:lifecycle}
 \end{figure}
 
+
+
+\subsection{Expected effort}
+We expect the highest effort in \textbf{cleaning and feature engineering} (timestamp/missingness corrections, PV quality checks, robust features), followed by model comparison and walk-forward evaluation. This emphasis aligns with time series practice where preprocessing largely determines forecasting quality \cite{Hyndman2021}.
+
+\subsection{External data sources}
+Weather reanalysis (e.g., ERA5) or local observations can improve forecasts; market prices are essential for cost-aware operation. If price and weather are already included in the dataset, additional sources are optional \cite{Hersbach2020}.
 %===========================
 % 3. Data Exploration
 %===========================
-\section*{3. Visualisation}
+\section{Visualisation}
 
-\subsection*{3.1 Objective and context}
-This section visualises the temporal dynamics and statistical characteristics of the core HEMS variables (demand, PV, price). The objective is to surface diurnal and weekly structure, variability, and dependencies that guide feature discovery, anomaly detection, and model selection. Sound visual analysis accelerates the detection of systematic effects (e.g., PV midday peaks, evening demand peaks) and informs preprocessing and modelling choices \cite{Hyndman2021,Tufte1983}.
+\subsection{Objective and context}
+This section visualizes the temporal dynamics and statistical characteristics of the core HEMS variables (demand, PV, price). The objective is to explore the structure, variability, and dependencies of the surface in the diurnal and weekly hours that guide the discovery of features, the detection of anomalies, and the selection of models. Sound visual analysis accelerates the detection of systematic effects (e.g., PV midday peaks, evening demand peaks) and informs preprocessing and modelingchoices \cite{Hyndman2021,Tufte1983}.
 
-\subsection*{3.2 Time-series visualisations}
-We first examine the variables over a few days and a longer horizon using project-produced figures.
-
-\begin{figure}[H]
-  \centering
-  \includegraphics[width=\linewidth]{03_timeseries_demand_pv.png}
-  \caption{Demand and PV time series (representative horizon). Units: kWh per hour. Legends and axes clarify diurnal patterns: PV peaks around solar noon; demand peaks occur in morning and evening.}
-  \label{fig:03_ts_demand_pv}
-\end{figure}
-
-Short interpretation: The diurnal cycle is dominant; PV approaches zero at night and increases sharply after sunrise, while demand exhibits two peaks aligned with occupancy routines (morning/evening).
-
-\begin{figure}[H]
-  \centering
-  \includegraphics[width=\linewidth]{03_timeseries_price.png}
-  \caption{Electricity price time series (same horizon). Units: \euro{}/kWh.}
-  \label{fig:03_ts_price}
-\end{figure}
-
-Short interpretation: Price exhibits intraday variation and episodes of elevated levels that often coincide with high demand and lower PV supply, reflecting scarcity conditions.
-
-\begin{figure}[H]
-  \centering
-  \includegraphics[width=\linewidth]{03_overlay_demand_pv_price.png}
-  \caption{Overlay of demand, PV, and price over several days with dual axes (kWh and \euro{}/kWh).}
-  \label{fig:03_overlay}
-\end{figure}
-
-Short interpretation: The overlay highlights how price tends to rise when net demand is high (low PV or evening peaks), reinforcing the value of storage and load shifting during such periods \cite{Hyndman2021}.
-
-\subsection*{3.3 Statistical visualisations}
-We complement the time series with statistical views that characterise distributional properties and dependencies.
-
-\begin{figure}[H]
-  \centering
-  \includegraphics[width=0.92\linewidth]{03_boxplot_daily.png}
-  \caption{Daily boxplots for demand and PV. Boxes and whiskers reveal variability and potential outliers, with PV showing strong skewness due to night-time zeros and intermittent cloud cover.}
-  \label{fig:03_boxplot_daily}
-\end{figure}
-
-Short interpretation: Demand’s interquartile range widens during morning/evening periods, while PV’s distribution concentrates near zero at night and broadens around midday under variable irradiance \cite{Antonanzas2016}.
-
-\begin{figure}[H]
-  \centering
-  \includegraphics[width=0.8\linewidth]{03_correlation_heatmap.png}
-  \caption{Correlation heatmap of demand, PV, and price. Positive association appears between demand and price; PV is broadly anti-correlated with net demand during midday.}
-  \label{fig:03_corr}
-\end{figure}
-
-Short interpretation: These dependencies motivate feature engineering with calendar indicators (hour, weekday), weather covariates (irradiance, temperature), and lagged terms to capture persistence structure \cite{Hyndman2021}.
-
-\subsection*{3.4 Summary and interpretation}
-Among the visualisations, the multi-variable overlay (Figure~\ref{fig:03_overlay}) is most informative for operational insight because it conveys temporal alignment of demand, PV, and price in a single view. The correlation heatmap (Figure~\ref{fig:03_corr}) is most informative for feature design, making relationships explicit and quantifiable. All figures adhere to effective and ethical principles—clear labels and legends, integrity of scales, colour choices that preserve accessibility—which improve interpretability and reduce misreading risk \cite{Tufte1983}. These insights guide subsequent tasks on data cleaning (e.g., checking PV night-time zeros, handling missingness) and feature engineering (e.g., adding calendar and weather features, persistence lags) to support robust forecasting and optimisation.
-\section{Data Exploration and Visualization}
 \subsection{Statistical overview}
-Descriptive statistics for demand, PV, and price are summarized in Table~\ref{tab:task3_stats}. Demand exhibits higher variance during morning and evening peaks, while PV shows strong right-skewness due to frequent near-zero night values and intermittent cloud cover. These patterns align with expected household energy profiles and solar variability \cite{Hyndman2021,Antonanzas2016}.
+The descriptive statistics for demand, photovoltaic and price are summarized in Table~\ref{tab:task3_stats}. Demand exhibits higher variance during morning and evening peaks, whereas PV shows strong right-skewness due to frequent near-zero night values and intermittent cloud cover. These patterns align with the expected energy profiles of the households and the variability of the sun \cite{Hyndman2021,Antonanzas2016}.
 
 \begin{table}[H]
   \centering
@@ -214,35 +154,34 @@ We present complementary visualizations to capture temporal structure, variabili
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=\linewidth]{task3_fig1_timeseries_overlay.png}
+  \includegraphics[width=\linewidth]{figures/task3_fig1_timeseries_overlay.png}
   \caption{Time series overlay (Demand, PV, Price) over a representative week. PV peaks at midday while demand peaks appear in morning/evening; price co-moves with scarcity.}
   \label{fig:task3_ts_overlay}
 \end{figure}
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.9\linewidth]{task3_fig3_hourly_boxplot.png}
+  \includegraphics[width=0.9\linewidth]{figures/task3_fig3_hourly_boxplot.png}
   \caption{Hourly demand boxplots highlighting diurnal variability and evening peaks relevant for storage dispatch.}
   \label{fig:task3_boxplots}
 \end{figure}
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.95\linewidth]{task3_fig2_distributions.png}
+  \includegraphics[width=0.95\linewidth]{figures/task3_fig2_distributions.png}
   \caption{Histograms with KDE for Demand and PV showing typical operating ranges and skewness.}
   \label{fig:task3_histograms}
 \end{figure}
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.8\linewidth]{task3_fig4_correlation_heatmap.png}
+  \includegraphics[width=0.8\linewidth]{figures/task3_fig4_correlation_heatmap.png}
   \caption{Correlation heatmap for core variables: positive association between demand and price; midday PV is broadly anti-correlated with net demand.}
   \label{fig:task3_corr}
 \end{figure}
 
 \subsection{Interpretation and insights}
 The figures reveal strong diurnal and weekday effects (peak demand in morning/evening; PV midday peaks). Correlation patterns motivate feature engineering: calendar variables (hour, weekday), weather covariates (irradiance, temperature), and lagged terms for persistence \cite{Hyndman2021}. Among the plots, the typical hourly structure captured by boxplots and profiles is most informative for downstream HEMS decisions because it concisely indicates when PV–demand mismatches are systematic and sizable, guiding storage control; these visuals adhere to ethical design (clear labels, units, non-deceptive axes) and maximize readability and completeness \cite{Antonanzas2016}.
-
 %===========================
 % 4. Data Cleaning
 %===========================
@@ -253,7 +192,7 @@ We begin with a systematic audit of missingness across the time series. Figure~\
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.95\linewidth]{task4_fig_missing_heatmap.png}
+  \includegraphics[width=0.95\linewidth]{figures/task4_fig_missing_heatmap.png}
   \caption{Missingness heatmap across variables and time. Clusters indicate outages; isolated gaps may be random losses.}
   \label{fig:task4_missing_heatmap}
 \end{figure}
@@ -270,7 +209,7 @@ To detect structural gaps (e.g., firmware resets at fixed hours), we examine mis
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.8\linewidth]{task4_fig_missing_tod.png}
+  \includegraphics[width=0.8\linewidth]{figures/task4_fig_missing_tod.png}
   \caption{Missingness by hour-of-day (share of samples missing).}
   \label{fig:task4_missing_tod}
 \end{figure}
@@ -284,17 +223,17 @@ To detect structural gaps (e.g., firmware resets at fixed hours), we examine mis
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.95\linewidth]{task4_fig_missing_timeline.png}
+  \includegraphics[width=0.95\linewidth]{figures/task4_fig_missing_timeline.png}
   \caption{Timeline view of missingness runs, revealing outage episodes.}
   \label{fig:task4_missing_timeline}
 \end{figure}
 
-\subsection*{4.3 Imputation strategy and validation}
+\subsection{Imputation strategy and validation}
 Given the strong daily structure, we combine conservative forward/backward fills for short gaps with calendar-aware interpolation and, where suitable, model-based imputation using seasonally adjusted series. Figure~\ref{fig:task4_imputation_overlay} overlays raw and imputed series for a representative window; Table~\ref{tab:task4_imputation_summary} reports diagnostic metrics (e.g., gap length distribution, post-imputation variance preservation). We avoid imputing PV at night (kept at zero) and cap fills over long runs to prevent artificial smoothing \cite{Hyndman2021,Little2002}.
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.95\linewidth]{task4_fig_imputation_overlay.png}
+  \includegraphics[width=0.95\linewidth]{figures/task4_fig_imputation_overlay.png}
   \caption{Imputation overlay: raw versus imputations across typical gaps. Strategy preserves diurnal shape while preventing drift.}
   \label{fig:task4_imputation_overlay}
 \end{figure}
@@ -306,42 +245,37 @@ Given the strong daily structure, we combine conservative forward/backward fills
   \csvautobooktabular{tables/task4_imputation_summary.csv}
 \end{table}
 
-\subsection*{4.4 Seasonal decomposition as a diagnostic}
+\subsection{Seasonal decomposition as a diagnostic}
 Seasonal-Trend decomposition (STL) helps verify that cleaning preserves essential structure. Figure~\ref{fig:task4_stl} shows clean series decomposed into trend, seasonal, and remainder. Seasonal amplitude and stable remainder suggest that imputations did not introduce artifacts and that later ARIMA/ML models can exploit clear seasonality \cite{Hyndman2021}.
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.95\linewidth]{task4_fig_stl_components.png}
+  \includegraphics[width=0.95\linewidth]{figures/task4_fig_stl_components.png}
   \caption{STL components after cleaning: strong diurnal seasonality with reasonable remainder variance.}
   \label{fig:task4_stl}
 \end{figure}
 
-\subsection*{4.5 Daily profiles before and after cleaning}
+\subsection{Daily profiles before and after cleaning}
 To verify that imputations did not distort operational patterns, we compare typical daily profiles. Figure~\ref{fig:task4_daily_profiles} indicates that peak timings and amplitudes remain consistent, while extreme outliers are mitigated—desirable for forecasting stability and optimisation downstream.
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.9\linewidth]{task4_fig_daily_profiles.png}
+  \includegraphics[width=0.9\linewidth]{figures/task4_fig_daily_profiles.png}
   \caption{Typical daily profiles before/after cleaning for demand and PV (median and IQR).}
   \label{fig:task4_daily_profiles}
 \end{figure}
 
-\subsection*{4.6 Limitations and ethical considerations}
+\subsection{Limitations and ethical considerations}
 While the adopted imputation strategy is conservative, any gap-filling may obscure rare but important behaviours (e.g., extreme peaks). We therefore retain an audit trail of imputed indices and exclude heavily imputed windows from model validation to prevent optimistic bias. From an ethics perspective, cleaning steps avoid fabricating PV at night and preserve physical plausibility. Decisions are documented for reproducibility and to facilitate stakeholder scrutiny \cite{Little2002,Hyndman2021}.
 
-\bigskip
 
-	extbf{Outcome.} The cleaned dataset exhibits stable seasonal structure, reasonable variance, and documented imputations, forming a reliable basis for feature engineering (Task~5) and forecasting (Tasks~7--10).
 
-%===========================
-% 5. Feature engineering
-%===========================
-\section*{5. Feature engineering}
+\section{Feature engineering}
 
-\subsection*{5.1 Objective and overview}
+\subsection{Objective and overview}
 Feature engineering is central to improving predictive performance in short-term demand forecasting. By representing domain structure explicitly---diurnal and weekly cycles, weather sensitivity, persistence---we increase the signal-to-noise ratio that models can exploit \cite{Zheng2020,Hyndman2021}. We leverage three information streams: (i) the demand series (autoregressive lags and rolling summaries), (ii) weather covariates (temperature, solar radiation as proxy for PV), and (iii) calendar variables (hour-of-day, weekday/weekend, month, holidays).
 
-\subsection*{5.2 Exploratory statistics}
+\subsection{Exploratory statistics}
 We examine marginal distributions and bivariate relationships to motivate transformations and interactions.
 
 \begin{figure}[H]
@@ -367,7 +301,7 @@ We examine marginal distributions and bivariate relationships to motivate transf
 
 Normalit{"a}t: Shapiro--Wilk-Tests auf stichprobenweise Fenster deuten bei Demand h{"a}ufig auf Nicht-Normalit{"a}t (p\,<\,0.05). Zur Stabilisierung der Varianz sind logarithmische oder Box--Cox-Transformationen geeignet, wobei f{"u}r Demand eine shift-Log (nur f{"u}r strikt positive Werte) oder Yeo--Johnson in Betracht kommt; f{"u}r Temperatur ist i. d. R. keine Transformation erforderlich \cite{Hyndman2021}. Transformationen werden nur angewandt, wenn sie die Kalibrierung verbessern und das Interpretationsziel nicht beeintr{"a}chtigen.
 
-\subsection*{5.3 Feature creation}
+\subsection{Feature creation}
 Wir erzeugen dom{"a}nenspezifische Zeit- und Wettermerkmale:
 \begin{itemize}[leftmargin=1.2em]
   \item \textbf{Kalender:} Stunde (0--23), Wochentag (0--6), Monat (1--12), Wochenende/Feiertag-Indikator. Rationale: f{"a}ngt diurnale und w{"o}chentliche Routinen ein.
@@ -378,7 +312,7 @@ Wir erzeugen dom{"a}nenspezifische Zeit- und Wettermerkmale:
 \end{itemize}
 Rationale: Diese Merkmale codieren bekannte physikalische und verhaltensbezogene Mechanismen (Tageslicht, Komfort, Routine) und verbessern die Erkl{"a}rbarkeit.
 
-\subsection*{5.4 Feature ranking}
+\subsection{Feature ranking}
 Zur Priorisierung nutzen wir korrelationsbasierte Scores und modellbasierte Wichtigkeiten (z.\,B. Random-Forest, Mutual Information). Abbildung~\ref{fig:fe_importance} zeigt die modellbasierte Rangfolge; typischerweise sind Stunde-des-Tages, Temperatur und Vortags-Lags (t-24) am wichtigsten, was die Diurnalit{"a}t und Wetterabh{"a}ngigkeit reflektiert. Falls einige konstruierte Features schwach abschneiden, k{"o}nnen Ursachen Multikollinearit{"a}t (stark korrelierte Lags), {\"U}ber-Engineering (redundante Transformationen) oder zu kurze Historien f{"u}r stabile Sch{"a}tzungen sein \cite{Zheng2020}.
 
 \begin{figure}[H]
@@ -388,9 +322,11 @@ Zur Priorisierung nutzen wir korrelationsbasierte Scores und modellbasierte Wich
   \label{fig:fe_importance}
 \end{figure}
 
-\subsection*{5.5 Summary}
+\subsection{Summary}
 Feature Engineering hat den Datensatz f{"u}r statistische Modelle (ARIMA, STL-basiert) und ML-Modelle (GBM, RF) aufbereitet: Diurnalit{"a}t und Wocheneffekte sind explizit, Persistenz wird durch Lags/Rolling-Stats abgebildet, Wetter- und Interaktionsmerkmale erfassen nichtlineare Treiber. Reproduzierbarkeit wird durch skriptbasierte Generierung (Notebook/`src/features.py`) und Versionierung der Feature-Schemata sichergestellt. Validierung erfolgt {\"u}ber Cross-Validation/WFA sowie Drift-Monitoring der Merkmalverteilungen. Gute Praktiken folgen \cite{Zheng2020,Hyndman2021}.
 
 \printbibliography
 
 \end{document}
+
+

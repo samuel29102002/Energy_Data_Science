@@ -70,16 +70,18 @@ def _apply_fig_style(fig: go.Figure, height: int = 420) -> go.Figure:
     fig.update_layout(
         template="plotly_white",
         uirevision=True,
-        margin=dict(l=40, r=40, t=60, b=40),
+        margin=dict(l=50, r=30, t=80, b=50),
         height=height,
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         hovermode="x unified",
         autosize=True,
-        font=dict(family="Inter, system-ui, -apple-system, sans-serif"),
-        title_font=dict(family="Inter, system-ui, -apple-system, sans-serif", size=20, color="#0f172a"),
+        font=dict(family="Inter, system-ui, -apple-system, sans-serif", size=12, color="#333"),
+        title_font=dict(family="CMU Serif, 'Times New Roman', serif", size=22, color="#1a1a1a"),
+        plot_bgcolor="white",
+        paper_bgcolor="white",
     )
-    fig.update_xaxes(showgrid=True, gridcolor="rgba(0,0,0,0.08)")
-    fig.update_yaxes(showgrid=True, gridcolor="rgba(0,0,0,0.08)")
+    fig.update_xaxes(showgrid=True, gridcolor="#f0f0f0", zeroline=False)
+    fig.update_yaxes(showgrid=True, gridcolor="#f0f0f0", zeroline=False)
     return fig
 
 
@@ -243,7 +245,7 @@ def _format_schema_table(schema_df: pd.DataFrame, selected: Optional[List[str]] 
 
 def _format_clean_log(log: List[Dict[str, object]]) -> List[html.Li]:
     if not log:
-        return [html.Li("Keine Reinigungsschritte erforderlich.")]
+        return [html.Li("No cleaning steps required.")]
     items: List[html.Li] = []
     for entry in log:
         step = entry.get("step", "")
@@ -611,12 +613,12 @@ def register_callbacks(app: Dash, data: DashboardData) -> None:
         clean_df = data.cleaned_dataset.copy()
 
         if raw_df.empty:
-            empty_fig = _empty_figure("Keine Quelldaten verfügbar")
+            empty_fig = _empty_figure("No source data available")
             clean_log = _format_clean_log(data.cleaning_log)
             return (
                 empty_fig,
                 empty_fig,
-                html.Span("Keine Daten geladen."),
+                html.Span("No data loaded."),
                 [],
                 [],
                 [],
@@ -653,7 +655,7 @@ def register_callbacks(app: Dash, data: DashboardData) -> None:
         # --- Time series figure -------------------------------------------------
         time_series_fig: go.Figure
         if raw_filtered.empty and (show_mode != "cleaned" or clean_filtered.empty):
-            time_series_fig = _empty_figure("Keine Daten für den ausgewählten Zeitraum")
+            time_series_fig = _empty_figure("No data for selected period")
         else:
             time_series_fig = go.Figure()
             palette = ["#1E90FF", "#00B386", "#F4B400", "#EF6C00", "#8E24AA"]
@@ -679,7 +681,7 @@ def register_callbacks(app: Dash, data: DashboardData) -> None:
                             line=dict(color=color, width=2.0, dash="dot"),
                         )
                     )
-            time_series_fig.update_layout(title="Zeitreihenvergleich")
+            time_series_fig.update_layout(title="Time Series Comparison")
             time_series_fig = _apply_fig_style(time_series_fig, height=440)
             time_series_fig.update_layout(uirevision="data-timeseries")
 
@@ -688,22 +690,22 @@ def register_callbacks(app: Dash, data: DashboardData) -> None:
         if not subset_cols:
             subset_cols = [col for col in available_columns if col in raw_filtered.columns][:3]
         if raw_filtered.empty or not subset_cols:
-            missing_fig = _empty_figure("Keine Daten für Missingness-Analyse")
-            missing_summary = html.Span("Keine fehlenden Werte im ausgewählten Zeitraum.")
+            missing_fig = _empty_figure("No data for missingness analysis")
+            missing_summary = html.Span("No missing values in selected period.")
         else:
             subset_df = raw_filtered[["timestamp"] + subset_cols] if "timestamp" in raw_filtered.columns else raw_filtered[subset_cols].copy()
             missing_fig = make_missingness_heatmap(subset_df, export_path=None)
             missing_summary_dict = compute_missing_summary(raw_filtered[subset_cols])
             summary_items = [
                 html.Li(
-                    f"{col}: {count} Werte ({(count / missing_summary_dict['total_rows'] * 100):.2f}%)"
+                    f"{col}: {count} values ({(count / missing_summary_dict['total_rows'] * 100):.2f}%)"
                     if missing_summary_dict["total_rows"]
-                    else f"{col}: {count} fehlende Werte"
+                    else f"{col}: {count} missing values"
                 )
                 for col, count in missing_summary_dict["columns_with_missing"].items()
             ]
             if not summary_items:
-                summary_items = [html.Li("Keine fehlenden Werte in den ausgewählten Spalten.")]
+                summary_items = [html.Li("No missing values in selected columns.")]
             missing_summary = html.Ul(summary_items, className="clean-log")
 
         # --- Summary statistics -------------------------------------------------
@@ -780,5 +782,73 @@ def register_callbacks(app: Dash, data: DashboardData) -> None:
         if not n_clicks or data.cleaned_dataset.empty:
             return no_update
         return dcc.send_data_frame(data.cleaned_dataset.to_csv, "cleaned_dataset.csv", index=False)
+
+    @app.callback(
+        [
+            Output(IDS["pipeline"]["pipeline_graph"], "figure"),
+            Output(IDS["pipeline"]["pipeline_metrics"], "figure"),
+            Output(IDS["pipeline"]["exog_graph"], "figure"),
+            Output(IDS["pipeline"]["exog_metrics"], "figure"),
+            Output(IDS["pipeline"]["exog_importance"], "figure"),
+        ],
+        [Input(IDS["pipeline"]["tabs"], "active_tab")],
+    )
+    def _update_pipeline_graphs(active_tab):
+        # Pipeline Graph
+        if data.pipeline_predictions.empty:
+            fig_pipe = _empty_figure("No pipeline predictions available")
+        else:
+            df = data.pipeline_predictions
+            fig_pipe = go.Figure()
+            if "Actual" in df.columns:
+                fig_pipe.add_trace(go.Scatter(x=df["timestamp"], y=df["Actual"], name="Actual", line=dict(color="black", width=1)))
+            for col in df.columns:
+                if col not in ["timestamp", "Actual"]:
+                    fig_pipe.add_trace(go.Scatter(x=df["timestamp"], y=df[col], name=col, mode="lines", opacity=0.7))
+            fig_pipe = _apply_fig_style(fig_pipe)
+
+        # Pipeline Metrics
+        if data.pipeline_metrics.empty:
+            fig_pipe_metrics = _empty_figure("No pipeline metrics available")
+        else:
+            df = data.pipeline_metrics.copy()
+            if "model_name" not in df.columns:
+                df["model_name"] = df.index
+            fig_pipe_metrics = px.bar(df, x="model_name", y=["RMSE", "MAE"], barmode="group")
+            fig_pipe_metrics = _apply_fig_style(fig_pipe_metrics)
+
+        # Exog Graph
+        if data.exog_predictions.empty:
+            fig_exog = _empty_figure("No exogenous predictions available")
+        else:
+            df = data.exog_predictions
+            fig_exog = go.Figure()
+            if "Actual" in df.columns:
+                fig_exog.add_trace(go.Scatter(x=df["timestamp"], y=df["Actual"], name="Actual", line=dict(color="black", width=1)))
+            for col in df.columns:
+                if col not in ["timestamp", "Actual"]:
+                    fig_exog.add_trace(go.Scatter(x=df["timestamp"], y=df[col], name=col, mode="lines", opacity=0.7))
+            fig_exog = _apply_fig_style(fig_exog)
+
+        # Exog Metrics
+        if data.exog_metrics.empty:
+            fig_exog_metrics = _empty_figure("No exogenous metrics available")
+        else:
+            df = data.exog_metrics.copy()
+            if "model_name" not in df.columns:
+                df["model_name"] = df.index
+            fig_exog_metrics = px.bar(df, x="model_name", y=["RMSE", "MAE"], barmode="group")
+            fig_exog_metrics = _apply_fig_style(fig_exog_metrics)
+
+        # Exog Importance
+        if data.exog_importance.empty:
+            fig_exog_imp = _empty_figure("No feature importance available")
+        else:
+            df = data.exog_importance.head(20).copy()
+            fig_exog_imp = px.bar(df, x="importance", y="feature", orientation="h")
+            fig_exog_imp.update_layout(yaxis={'categoryorder':'total ascending'})
+            fig_exog_imp = _apply_fig_style(fig_exog_imp)
+
+        return fig_pipe, fig_pipe_metrics, fig_exog, fig_exog_metrics, fig_exog_imp
 
     app.logger.info("Registered %d callbacks", len(app.callback_map))

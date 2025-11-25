@@ -22,6 +22,17 @@ class DashboardData:
     ml_split_predictions: pd.DataFrame
     ml_feature_importance: pd.DataFrame
     storage_summary: pd.DataFrame
+    # New fields for Notebook 9 & 10
+    pipeline_metrics: pd.DataFrame
+    pipeline_predictions: pd.DataFrame
+    exog_metrics: pd.DataFrame
+    exog_predictions: pd.DataFrame
+    exog_importance: pd.DataFrame
+
+    # New fields for Notebook 11
+    optim_summary_11: pd.DataFrame
+    optim_sensitivity_11: pd.DataFrame
+
     forecast_models: List[str]
     ml_models: List[str]
     storage_scenarios: List[str]
@@ -226,6 +237,33 @@ def load_dashboard_data(tables_path: Optional[Path] = None) -> DashboardData:
             }
         )
 
+    # Load Notebook 9 & 10 results
+    pipeline_metrics = _read_csv(path / "09_forecast_metrics_summary.csv")
+    pipeline_metrics = _clean_numeric(pipeline_metrics, ["MAE", "RMSE", "nRMSE"])
+
+    pipeline_predictions = _read_csv(path / "09_forecast_predictions.csv", parse_dates=["timestamp"])
+    if not pipeline_predictions.empty:
+        pipeline_predictions = pipeline_predictions.sort_values("timestamp").reset_index(drop=True)
+
+    exog_metrics = _read_csv(path / "10_exog_models_metrics.csv")
+    exog_metrics = _clean_numeric(exog_metrics, ["MAE", "RMSE", "nRMSE"])
+
+    exog_predictions = _read_csv(path / "10_exog_models_predictions.csv", parse_dates=["timestamp"])
+    if not exog_predictions.empty:
+        exog_predictions = exog_predictions.sort_values("timestamp").reset_index(drop=True)
+
+    exog_importance = _read_csv(path / "10_exog_feature_importance.csv")
+    exog_importance = _clean_numeric(exog_importance, ["importance"])
+    if not exog_importance.empty:
+        exog_importance = exog_importance.sort_values("importance", ascending=False).reset_index(drop=True)
+
+    # Load Notebook 11 results
+    optim_summary_11 = _read_csv(path / "11_storage_optimization_summary.csv")
+    optim_summary_11 = _clean_numeric(optim_summary_11, ["Total_cost_EUR", "Energy_bought_kWh", "Energy_sold_kWh", "Battery_cycles"])
+
+    optim_sensitivity_11 = _read_csv(path / "11_battery_sensitivity.csv")
+    optim_sensitivity_11 = _clean_numeric(optim_sensitivity_11, ["Battery_capacity_kWh", "Total_cost"])
+
     return DashboardData(
         tables_path=path,
         forecast_predictions=forecast_predictions,
@@ -234,6 +272,15 @@ def load_dashboard_data(tables_path: Optional[Path] = None) -> DashboardData:
         ml_split_predictions=ml_split_predictions,
         ml_feature_importance=ml_feature_importance,
         storage_summary=storage_summary,
+        # New fields
+        pipeline_metrics=pipeline_metrics,
+        pipeline_predictions=pipeline_predictions,
+        exog_metrics=exog_metrics,
+        exog_predictions=exog_predictions,
+        exog_importance=exog_importance,
+        optim_summary_11=optim_summary_11,
+        optim_sensitivity_11=optim_sensitivity_11,
+
         forecast_models=forecast_models,
         ml_models=ml_models,
         storage_scenarios=storage_scenarios,

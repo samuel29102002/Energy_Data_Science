@@ -9,9 +9,18 @@ IDS = {
         "overview": "nav-overview",
         "ml": "nav-ml",
         "forecast": "nav-forecast",
+        "pipeline": "nav-pipeline",
         "optimization": "nav-optimization",
         "data": "nav-data",
         "about": "nav-about",
+    },
+    "pipeline": {
+        "tabs": "pipeline-tabs",
+        "pipeline_graph": "pipeline-graph",
+        "pipeline_metrics": "pipeline-metrics",
+        "exog_graph": "exog-graph",
+        "exog_metrics": "exog-metrics",
+        "exog_importance": "exog-importance",
     },
     "overview": {
         "kpi_rmse": "overview-kpi-rmse",
@@ -44,6 +53,9 @@ IDS = {
         "kpi_cycles": "optimization-kpi-cycles",
         "soc_graph": "optimization-soc-graph",
         "energy_graph": "optimization-energy-graph",
+        # New IDs for Notebook 11
+        "summary_table_11": "optimization-summary-table-11",
+        "sensitivity_graph_11": "optimization-sensitivity-graph-11",
     },
     "data": {
         "page": "data-page",

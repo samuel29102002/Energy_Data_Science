@@ -13,6 +13,7 @@ NAV_ITEMS = (
     {"href": "/overview", "label": "Overview", "nav_id": IDS["navigation"]["overview"]},
     {"href": "/ml", "label": "ML Models", "nav_id": IDS["navigation"]["ml"]},
     {"href": "/forecast", "label": "Forecasting", "nav_id": IDS["navigation"]["forecast"]},
+    {"href": "/pipeline", "label": "Pipeline", "nav_id": IDS["navigation"]["pipeline"]},
     {"href": "/optimization", "label": "Optimization", "nav_id": IDS["navigation"]["optimization"]},
     {"href": "/data", "label": "Data / Cleaning", "nav_id": IDS["navigation"]["data"]},
     {"href": "/about", "label": "About / Info", "nav_id": IDS["navigation"]["about"]},
@@ -119,21 +120,21 @@ def _overview_hero(data: DashboardData) -> html.Div:
         [
             html.Div(
                 [
-                    html.Span("Projektstatus", className="hero-label"),
-                    html.H2("Aktueller Überblick", className="hero-title"),
+                    html.Span("Project Status", className="hero-label"),
+                    html.H2("Current Overview", className="hero-title"),
                     html.P(
-                        f"Zeitraum {start_str} bis {end_str} mit {model_count} Prognosemodellen und {scenario_count} Batterieszenarien.",
+                        f"Period {start_str} to {end_str} with {model_count} forecast models and {scenario_count} battery scenarios.",
                         className="hero-text",
                     ),
                     html.Div(
                         [
-                            html.Span(f"Bereinigungsschritte: {clean_steps}", className="hero-chip"),
+                            html.Span(f"Cleaning steps: {clean_steps}", className="hero-chip"),
                             html.Span(
-                                f"Datensätze gesäubert: {format_number(cleaned_pct, precision=1, as_percent=True)}",
+                                f"Records cleaned: {format_number(cleaned_pct, precision=1, as_percent=True)}",
                                 className="hero-chip",
                             )
                             if cleaned_pct is not None
-                            else html.Span("Datensätze gesäubert: --", className="hero-chip"),
+                            else html.Span("Records cleaned: --", className="hero-chip"),
                         ],
                         className="hero-chips",
                     ),
@@ -144,32 +145,32 @@ def _overview_hero(data: DashboardData) -> html.Div:
                 [
                     html.Div(
                         [
-                            html.Span("Bereinigte Zeilen", className="hero-stat-label"),
+                            html.Span("Cleaned Rows", className="hero-stat-label"),
                             html.Span(format_number(clean_rows, precision=0), className="hero-stat-value"),
                             html.Span(
-                                f"von {format_number(raw_rows, precision=0)} Rohdaten", className="hero-stat-footer"
+                                f"of {format_number(raw_rows, precision=0)} raw data", className="hero-stat-footer"
                             ),
                         ],
                         className="hero-stat-card",
                     ),
                     html.Div(
                         [
-                            html.Span("Merkmalsumfang", className="hero-stat-label"),
+                            html.Span("Feature Scope", className="hero-stat-label"),
                             html.Span(str(feature_count), className="hero-stat-value"),
-                            html.Span("verwendete Features", className="hero-stat-footer"),
+                            html.Span("features used", className="hero-stat-footer"),
                         ],
                         className="hero-stat-card",
                     ),
                     html.Div(
                         [
-                            html.Span("Missing-Anteil", className="hero-stat-label"),
+                            html.Span("Missing Ratio", className="hero-stat-label"),
                             html.Span(
                                 format_number(missing_pct, precision=1, as_percent=True)
                                 if missing_pct is not None
                                 else "--",
                                 className="hero-stat-value",
                             ),
-                            html.Span("in den Rohdaten", className="hero-stat-footer"),
+                            html.Span("in raw data", className="hero-stat-footer"),
                         ],
                         className="hero-stat-card",
                     ),
@@ -184,7 +185,7 @@ def _overview_hero(data: DashboardData) -> html.Div:
 def _overview_insight_list(data: DashboardData) -> html.Ul:
     df = data.cleaned_dataset.copy()
     if df.empty or "timestamp" not in df.columns:
-        return html.Ul([html.Li("Keine bereinigten Daten verfügbar.")], className="insight-list")
+        return html.Ul([html.Li("No cleaned data available.")], className="insight-list")
 
     df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
     df = df.dropna(subset=["timestamp"]).copy()
@@ -196,7 +197,7 @@ def _overview_insight_list(data: DashboardData) -> html.Ul:
         if not hourly.empty:
             peak_hour = int(hourly.idxmax())
             peak_value = format_number(float(hourly.max()), precision=2)
-            insights.append(html.Li(f"Höchste Nachfrage um {peak_hour:02d}:00 Uhr mit {peak_value} kWh."))
+            insights.append(html.Li(f"Highest demand at {peak_hour:02d}:00 with {peak_value} kWh."))
 
         df["month"] = df["timestamp"].dt.month
         monthly = df.groupby("month")["Demand"].mean().dropna()
@@ -205,7 +206,7 @@ def _overview_insight_list(data: DashboardData) -> html.Ul:
             month_name = pd.Timestamp(year=2000, month=top_month, day=1).strftime("%B")
             insights.append(
                 html.Li(
-                    f"Stärkster Nachfrage-Monat: {month_name} mit {format_number(float(monthly.max()), precision=2)} kWh durchschnittlich."
+                    f"Strongest demand month: {month_name} with {format_number(float(monthly.max()), precision=2)} kWh average."
                 )
             )
 
@@ -216,17 +217,17 @@ def _overview_insight_list(data: DashboardData) -> html.Ul:
             pv_share = (pv_sum / demand_sum) * 100
             insights.append(
                 html.Li(
-                    f"PV deckt {format_number(pv_share, precision=1, as_percent=True)} des aggregierten Energiebedarfs."
+                    f"PV covers {format_number(pv_share, precision=1, as_percent=True)} of aggregated energy demand."
                 )
             )
 
     if {"Demand", "Temperature"}.issubset(df.columns):
         corr = df[["Demand", "Temperature"]].corr().iloc[0, 1]
         if pd.notna(corr):
-            insights.append(html.Li(f"Korrelation Demand/Temperatur: {format_number(float(corr), precision=2)}."))
+            insights.append(html.Li(f"Correlation Demand/Temperature: {format_number(float(corr), precision=2)}."))
 
     if not insights:
-        insights.append(html.Li("Keine zusätzlichen Insights berechenbar."))
+        insights.append(html.Li("No additional insights calculable."))
 
     return html.Ul(insights, className="insight-list")
 
@@ -788,14 +789,68 @@ def about_page(_: DashboardData) -> html.Div:
     )
 
 
+def pipeline_page(data: DashboardData) -> html.Div:
+    return html.Div(
+        [
+            dbc.Tabs(
+                [
+                    dbc.Tab(
+                        [
+                            html.Div("Forecasting Pipeline Results (Notebook 9)", className="section-title mt-4"),
+                            dbc.Row(
+                                [
+                                    dbc.Col(_loading(dcc.Graph(id=IDS["pipeline"]["pipeline_graph"], responsive=True)), width=12),
+                                ],
+                                className="mb-4",
+                            ),
+                            dbc.Row(
+                                [
+                                    dbc.Col(_loading(dcc.Graph(id=IDS["pipeline"]["pipeline_metrics"], responsive=True)), width=12),
+                                ]
+                            ),
+                        ],
+                        label="Forecasting Pipeline",
+                        tab_id="tab-pipeline",
+                    ),
+                    dbc.Tab(
+                        [
+                            html.Div("Exogenous Models Results (Notebook 10)", className="section-title mt-4"),
+                            dbc.Row(
+                                [
+                                    dbc.Col(_loading(dcc.Graph(id=IDS["pipeline"]["exog_graph"], responsive=True)), width=12),
+                                ],
+                                className="mb-4",
+                            ),
+                            dbc.Row(
+                                [
+                                    dbc.Col(_loading(dcc.Graph(id=IDS["pipeline"]["exog_metrics"], responsive=True)), lg=6),
+                                    dbc.Col(_loading(dcc.Graph(id=IDS["pipeline"]["exog_importance"], responsive=True)), lg=6),
+                                ]
+                            ),
+                        ],
+                        label="Exogenous Models",
+                        tab_id="tab-exog",
+                    ),
+                ],
+                id=IDS["pipeline"]["tabs"],
+                active_tab="tab-pipeline",
+                className="nav-tabs-modern",
+            ),
+        ],
+        className="page-body",
+    )
+
+
 PAGE_BUILDERS: Dict[str, Callable[[DashboardData], html.Div]] = {
     "/": overview_page,
     "/overview": overview_page,
     "/ml": ml_page,
     "/forecast": forecasting_page,
+    "/pipeline": pipeline_page,
     "/optimization": optimization_page,
     "/data": data_page,
     "/about": about_page,
+    "/pipeline": pipeline_page,
 }
 
 

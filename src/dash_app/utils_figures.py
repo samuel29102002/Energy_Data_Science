@@ -14,6 +14,7 @@ import plotly.io as pio
 
 DEFAULT_TEMPLATE = "plotly_white"
 DEFAULT_FONT = "Inter, system-ui, -apple-system, sans-serif"
+TITLE_FONT = "CMU Serif, 'Times New Roman', serif"
 
 
 @dataclass(frozen=True)
@@ -32,14 +33,18 @@ def _ensure_datetime(df: pd.DataFrame, column: str = "timestamp") -> pd.DataFram
 
 def _basic_layout(fig: go.Figure, title: str, height: int = 420) -> go.Figure:
     fig.update_layout(
-        title=title,
+        title=dict(text=title, font=dict(family=TITLE_FONT, size=22, color="#1a1a1a")),
         template=DEFAULT_TEMPLATE,
         hovermode="x unified",
         autosize=True,
         height=height,
-        margin=dict(l=40, r=20, t=60, b=40),
-        font=dict(family=DEFAULT_FONT),
+        margin=dict(l=50, r=30, t=70, b=50),
+        font=dict(family=DEFAULT_FONT, size=12, color="#333"),
+        plot_bgcolor="white",
+        paper_bgcolor="white",
     )
+    fig.update_xaxes(showgrid=True, gridcolor="#f0f0f0", zeroline=False)
+    fig.update_yaxes(showgrid=True, gridcolor="#f0f0f0", zeroline=False)
     return fig
 
 
