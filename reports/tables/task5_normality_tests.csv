@@ -1,0 +1,4 @@
+Variable,Shapiro-Wilk Stat,p-value,Normal
+Demand,0.7328344932132647,3.491699314867225e-67,False
+Temperature,0.9855674322968961,3.2986693335516546e-22,False
+Shortwave_radiation (W/m²),0.690381122263724,6.24050348776742e-48,False
