@@ -76,22 +76,22 @@ def _topbar() -> html.Header:
     )
 
 
-def _kpi_card(title: str, value_id: str) -> dbc.Card:
-    return dbc.Card(
-        dbc.CardBody([
+def _kpi_card(title: str, value_id: str) -> html.Div:
+    return html.Div(
+        [
             html.Div(title, className="kpi-title"),
             html.Div("--", id=value_id, className="kpi-value"),
-        ]),
+        ],
         className="kpi-card",
     )
 
 
-def _stat_card(title: str, value_id: str) -> dbc.Card:
-    return dbc.Card(
-        dbc.CardBody([
+def _stat_card(title: str, value_id: str) -> html.Div:
+    return html.Div(
+        [
             html.Div(title, className="stat-title"),
             html.Div("--", id=value_id, className="stat-value"),
-        ]),
+        ],
         className="stat-card",
     )
 
@@ -517,6 +517,47 @@ def optimization_page(data: DashboardData) -> html.Div:
                             ],
                             className="mt-4",
                         ),
+                        dbc.Row(
+                            [
+                                dbc.Col(
+                                    [
+                                        html.Div("Optimization Summary (Notebook 11)", className="section-title mt-4"),
+                                        _loading(dash_table.DataTable(
+                                            id=IDS["optimization"]["summary_table_11"],
+                                            style_table={'overflowX': 'auto'},
+                                            style_cell={
+                                                'textAlign': 'left',
+                                                'padding': '10px',
+                                                'fontFamily': 'Inter, sans-serif'
+                                            },
+                                            style_header={
+                                                'backgroundColor': 'white',
+                                                'fontWeight': 'bold',
+                                                'borderBottom': '2px solid #eee'
+                                            },
+                                            style_data={
+                                                'backgroundColor': 'white',
+                                                'borderBottom': '1px solid #eee'
+                                            }
+                                        )),
+                                    ],
+                                    lg=12,
+                                ),
+                            ],
+                            className="mt-4",
+                        ),
+                        dbc.Row(
+                            [
+                                dbc.Col(
+                                    [
+                                        html.Div("Battery Sensitivity Analysis (Notebook 11)", className="section-title mt-4"),
+                                        _loading(dcc.Graph(id=IDS["optimization"]["sensitivity_graph_11"], responsive=True)),
+                                    ],
+                                    lg=12,
+                                ),
+                            ],
+                            className="mt-4",
+                        ),
                     ]
                 ),
                 className="card-section",
@@ -592,7 +633,7 @@ def data_page(data: DashboardData) -> html.Div:
                             ),
                             className="card-section control-card",
                         ),
-                        lg=4,
+                        lg=3,
                         md=12,
                     ),
                     dbc.Col(
@@ -605,152 +646,170 @@ def data_page(data: DashboardData) -> html.Div:
                                 ],
                                 className="stat-row",
                             ),
-                            html.Div(
+                            dbc.Tabs(
                                 [
-                                    dbc.Card(
-                                        dbc.CardBody(
-                                            [
-                                                html.Div("Time-series comparison", className="section-title"),
-                                                _loading(
-                                                    dcc.Graph(
-                                                        id=IDS["data"]["time_series"],
-                                                        responsive=True,
-                                                        config={"responsive": True},
-                                                        style={"width": "100%", "height": "100%"},
-                                                    )
+                                    dbc.Tab(
+                                        [
+                                            dbc.Card(
+                                                dbc.CardBody(
+                                                    [
+                                                        html.Div("Time-series comparison", className="section-title"),
+                                                        _loading(
+                                                            dcc.Graph(
+                                                                id=IDS["data"]["time_series"],
+                                                                responsive=True,
+                                                                config={"responsive": True},
+                                                                style={"width": "100%", "height": "100%"},
+                                                            )
+                                                        ),
+                                                    ]
                                                 ),
-                                            ]
-                                        ),
-                                        className="card-section figure-card",
+                                                className="card-section figure-card mt-3",
+                                            ),
+                                            dbc.Card(
+                                                dbc.CardBody(
+                                                    [
+                                                        html.Div("Summary statistics", className="section-title"),
+                                                        _loading(
+                                                            dash_table.DataTable(
+                                                                id=IDS["data"]["summary_stats"],
+                                                                data=[],
+                                                                columns=[],
+                                                                style_as_list_view=True,
+                                                                style_table={"overflowX": "auto"},
+                                                                style_cell={
+                                                                    "padding": "0.65rem",
+                                                                    "fontFamily": "Inter, system-ui",
+                                                                    "fontSize": 13,
+                                                                },
+                                                                style_header={
+                                                                    "backgroundColor": "#f1f5f9",
+                                                                    "fontWeight": "600",
+                                                                    "border": "none",
+                                                                },
+                                                                style_data={"border": "none"},
+                                                            )
+                                                        ),
+                                                    ]
+                                                ),
+                                                className="card-section figure-card mt-3",
+                                            ),
+                                        ],
+                                        label="Exploration",
+                                        tab_id="tab-explore",
+                                    ),
+                                    dbc.Tab(
+                                        [
+                                            dbc.Card(
+                                                dbc.CardBody(
+                                                    [
+                                                        html.Div("Missingness overview", className="section-title"),
+                                                        _loading(
+                                                            dcc.Graph(
+                                                                id=IDS["data"]["missing_heatmap"],
+                                                                responsive=True,
+                                                                config={"responsive": True},
+                                                                style={"width": "100%", "height": "100%"},
+                                                            )
+                                                        ),
+                                                        html.Div(id=IDS["data"]["missing_summary"], className="summary-text mt-3"),
+                                                    ]
+                                                ),
+                                                className="card-section figure-card mt-3",
+                                            ),
+                                            dbc.Card(
+                                                dbc.CardBody(
+                                                    [
+                                                        html.Div("Schema", className="section-title compact"),
+                                                        _loading(
+                                                            dash_table.DataTable(
+                                                                id=IDS["data"]["schema_table"],
+                                                                data=[],
+                                                                columns=[],
+                                                                style_as_list_view=True,
+                                                                style_table={"overflowX": "auto"},
+                                                                style_cell={
+                                                                    "padding": "0.55rem",
+                                                                    "fontFamily": "Inter, system-ui",
+                                                                    "fontSize": 13,
+                                                                },
+                                                                style_header={
+                                                                    "backgroundColor": "#f8fafc",
+                                                                    "fontWeight": "600",
+                                                                    "border": "none",
+                                                                },
+                                                                style_data={"border": "none"},
+                                                            )
+                                                        ),
+                                                    ]
+                                                ),
+                                                className="card-section figure-card mt-3",
+                                            ),
+                                        ],
+                                        label="Data Quality",
+                                        tab_id="tab-quality",
+                                    ),
+                                    dbc.Tab(
+                                        [
+                                            dbc.Card(
+                                                dbc.CardBody(
+                                                    [
+                                                        html.Div("Cleaning Log", className="section-title"),
+                                                        html.Div(id=IDS["data"]["clean_log"], className="clean-log-container"),
+                                                    ]
+                                                ),
+                                                className="card-section figure-card mt-3",
+                                            ),
+                                        ],
+                                        label="Cleaning Log",
+                                        tab_id="tab-log",
+                                    ),
+                                    dbc.Tab(
+                                        [
+                                            dbc.Card(
+                                                dbc.CardBody(
+                                                    [
+                                                        html.Div("Data Sample", className="section-title"),
+                                                        _loading(
+                                                            dash_table.DataTable(
+                                                                id=IDS["data"]["raw_head"],
+                                                                data=[],
+                                                                columns=[],
+                                                                style_as_list_view=True,
+                                                                style_table={"overflowX": "auto"},
+                                                                style_cell={
+                                                                    "padding": "0.55rem",
+                                                                    "fontFamily": "Inter, system-ui",
+                                                                    "fontSize": 13,
+                                                                },
+                                                                style_header={
+                                                                    "backgroundColor": "#f8fafc",
+                                                                    "fontWeight": "600",
+                                                                    "border": "none",
+                                                                },
+                                                                style_data={"border": "none"},
+                                                            )
+                                                        ),
+                                                    ]
+                                                ),
+                                                className="card-section figure-card mt-3",
+                                            ),
+                                        ],
+                                        label="Data Sample",
+                                        tab_id="tab-sample",
                                     ),
                                 ],
-                                className="data-figures mt-3",
+                                className="nav-tabs-modern",
                             ),
                         ],
-                        lg=8,
+                        lg=9,
                         md=12,
                     ),
                 ],
                 className="page-row",
             ),
-            html.Div(
-                [
-                    dbc.Card(
-                        dbc.CardBody(
-                            [
-                                html.Div("Missingness overview", className="section-title"),
-                                _loading(
-                                    dcc.Graph(
-                                        id=IDS["data"]["missing_heatmap"],
-                                        responsive=True,
-                                        config={"responsive": True},
-                                        style={"width": "100%", "height": "100%"},
-                                    )
-                                ),
-                                html.Div(id=IDS["data"]["missing_summary"], className="summary-text mt-3"),
-                            ]
-                        ),
-                        className="card-section figure-card",
-                    ),
-                    dbc.Card(
-                        dbc.CardBody(
-                            [
-                                html.Div("Summary statistics", className="section-title"),
-                                _loading(
-                                    dash_table.DataTable(
-                                        id=IDS["data"]["summary_stats"],
-                                        data=[],
-                                        columns=[],
-                                        style_as_list_view=True,
-                                        style_table={"overflowX": "auto"},
-                                        style_cell={
-                                            "padding": "0.65rem",
-                                            "fontFamily": "Inter, system-ui",
-                                            "fontSize": 13,
-                                        },
-                                        style_header={
-                                            "backgroundColor": "#f1f5f9",
-                                            "fontWeight": "600",
-                                            "border": "none",
-                                        },
-                                        style_data={"border": "none"},
-                                    )
-                                ),
-                                html.Hr(),
-                                html.Div("Schema", className="section-title compact"),
-                                _loading(
-                                    dash_table.DataTable(
-                                        id=IDS["data"]["schema_table"],
-                                        data=[],
-                                        columns=[],
-                                        style_as_list_view=True,
-                                        style_table={"overflowX": "auto"},
-                                        style_cell={
-                                            "padding": "0.55rem",
-                                            "fontFamily": "Inter, system-ui",
-                                            "fontSize": 13,
-                                        },
-                                        style_header={
-                                            "backgroundColor": "#f8fafc",
-                                            "fontWeight": "600",
-                                            "border": "none",
-                                        },
-                                        style_data={"border": "none"},
-                                    )
-                                ),
-                            ]
-                        ),
-                        className="card-section figure-card",
-                    ),
-                ],
-                className="data-figures mt-3",
-            ),
-            html.Div(
-                [
-                    dbc.Card(
-                        dbc.CardBody(
-                            [
-                                html.Div("Raw data sample", className="section-title"),
-                                _loading(
-                                    dash_table.DataTable(
-                                        id=IDS["data"]["raw_head"],
-                                        data=[],
-                                        columns=[],
-                                        style_as_list_view=True,
-                                        style_table={"overflowX": "auto"},
-                                        page_size=10,
-                                        style_cell={
-                                            "padding": "0.55rem",
-                                            "fontFamily": "Inter, system-ui",
-                                            "fontSize": 13,
-                                        },
-                                        style_header={
-                                            "backgroundColor": "#f1f5f9",
-                                            "fontWeight": "600",
-                                            "border": "none",
-                                        },
-                                        style_data={"border": "none"},
-                                    )
-                                ),
-                            ]
-                        ),
-                        className="card-section figure-card",
-                    ),
-                    dbc.Card(
-                        dbc.CardBody(
-                            [
-                                html.Div("Cleaning steps", className="section-title"),
-                                _loading(html.Ul(id=IDS["data"]["clean_log"], className="clean-log")),
-                            ]
-                        ),
-                        className="card-section figure-card",
-                    ),
-                ],
-                className="data-figures mt-3",
-            ),
         ],
-        className="page-body page-body-compact",
-        id=IDS["data"]["page"],
+        className="page-body",
     )
 
 

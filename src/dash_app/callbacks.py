@@ -311,17 +311,24 @@ def _forecast_metrics_bar(data: DashboardData) -> go.Figure:
     metrics = data.forecast_metrics_summary
     if metrics.empty:
         return _empty_figure("No forecast metrics available")
-    display = metrics.dropna(subset=["model_name", "RMSE_mean"]).copy()
+
+    # Determine RMSE column
+    rmse_col = "RMSE_mean" if "RMSE_mean" in metrics.columns else "RMSE"
+    if rmse_col not in metrics.columns:
+        return _empty_figure("No RMSE data available")
+
+    display = metrics.dropna(subset=["model_name", rmse_col]).copy()
     if display.empty:
         return _empty_figure("No forecast metrics available")
-    display.sort_values("RMSE_mean", inplace=True)
+
+    display.sort_values(rmse_col, inplace=True)
     fig = px.bar(
         display,
         x="model_name",
-        y="RMSE_mean",
-        color="RMSE_mean",
+        y=rmse_col,
+        color=rmse_col,
         color_continuous_scale=["#00B386", "#1E90FF"],
-        labels={"model_name": "Model", "RMSE_mean": "RMSE"},
+        labels={"model_name": "Model", rmse_col: "RMSE"},
         title="Mean RMSE by model",
     )
     return _apply_fig_style(fig, height=360)
@@ -814,8 +821,20 @@ def register_callbacks(app: Dash, data: DashboardData) -> None:
             df = data.pipeline_metrics.copy()
             if "model_name" not in df.columns:
                 df["model_name"] = df.index
-            fig_pipe_metrics = px.bar(df, x="model_name", y=["RMSE", "MAE"], barmode="group")
-            fig_pipe_metrics = _apply_fig_style(fig_pipe_metrics)
+
+            # Determine available metrics
+            y_cols = []
+            for metric in ["RMSE", "MAE", "nRMSE"]:
+                if metric in df.columns:
+                    y_cols.append(metric)
+                elif f"{metric}_mean" in df.columns:
+                    y_cols.append(f"{metric}_mean")
+
+            if not y_cols:
+                fig_pipe_metrics = _empty_figure("No valid metrics columns found")
+            else:
+                fig_pipe_metrics = px.bar(df, x="model_name", y=y_cols, barmode="group")
+                fig_pipe_metrics = _apply_fig_style(fig_pipe_metrics)
 
         # Exog Graph
         if data.exog_predictions.empty:
@@ -837,8 +856,20 @@ def register_callbacks(app: Dash, data: DashboardData) -> None:
             df = data.exog_metrics.copy()
             if "model_name" not in df.columns:
                 df["model_name"] = df.index
-            fig_exog_metrics = px.bar(df, x="model_name", y=["RMSE", "MAE"], barmode="group")
-            fig_exog_metrics = _apply_fig_style(fig_exog_metrics)
+
+            # Determine available metrics
+            y_cols = []
+            for metric in ["RMSE", "MAE", "nRMSE"]:
+                if metric in df.columns:
+                    y_cols.append(metric)
+                elif f"{metric}_mean" in df.columns:
+                    y_cols.append(f"{metric}_mean")
+
+            if not y_cols:
+                fig_exog_metrics = _empty_figure("No valid metrics columns found")
+            else:
+                fig_exog_metrics = px.bar(df, x="model_name", y=y_cols, barmode="group")
+                fig_exog_metrics = _apply_fig_style(fig_exog_metrics)
 
         # Exog Importance
         if data.exog_importance.empty:
@@ -850,5 +881,41 @@ def register_callbacks(app: Dash, data: DashboardData) -> None:
             fig_exog_imp = _apply_fig_style(fig_exog_imp)
 
         return fig_pipe, fig_pipe_metrics, fig_exog, fig_exog_metrics, fig_exog_imp
+
+    @app.callback(
+        [
+            Output(IDS["optimization"]["summary_table_11"], "data"),
+            Output(IDS["optimization"]["summary_table_11"], "columns"),
+            Output(IDS["optimization"]["sensitivity_graph_11"], "figure"),
+        ],
+        [Input(IDS["optimization"]["scenario_dropdown"], "value")],  # Dummy input to trigger on load
+    )
+    def _update_optimization_11(_):
+        # Summary Table
+        if data.optim_summary_11.empty:
+            table_data = []
+            table_columns = []
+        else:
+            df = data.optim_summary_11.copy()
+            numeric_cols = df.select_dtypes(include=["number"]).columns
+            df[numeric_cols] = df[numeric_cols].round(2)
+            table_data = df.to_dict("records")
+            table_columns = [{"name": col.replace("_", " "), "id": col} for col in df.columns]
+
+        # Sensitivity Graph
+        if data.optim_sensitivity_11.empty:
+            fig_sens = _empty_figure("No sensitivity data available")
+        else:
+            df_sens = data.optim_sensitivity_11.sort_values("Battery_capacity_kWh")
+            fig_sens = px.line(
+                df_sens,
+                x="Battery_capacity_kWh",
+                y="Total_cost",
+                markers=True,
+                title="Cost Sensitivity to Battery Capacity"
+            )
+            fig_sens = _apply_fig_style(fig_sens)
+
+        return table_data, table_columns, fig_sens
 
     app.logger.info("Registered %d callbacks", len(app.callback_map))

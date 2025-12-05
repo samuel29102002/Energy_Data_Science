@@ -385,7 +385,7 @@ header.app-header,
   align-items: flex-start;
   transition: var(--transition);
   border: 1px solid rgba(0, 0, 0, 0.05);
-  height: 120px;
+  height: 100px;
   flex: 1 1 200px;
   min-width: 200px;
 }
