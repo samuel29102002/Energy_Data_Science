@@ -163,10 +163,30 @@ def _build_overview_kpis(data: DashboardData) -> tuple[str, str, str, str]:
     )
 
 
-def _build_insights(clean_df: pd.DataFrame, limit: int = 5) -> html.Ul:
+def _build_insights(clean_df: pd.DataFrame, limit: int = 6) -> html.Ul:
     kpi_df = _load_table("07_kpis.csv")
     feature_df = _load_table("05_feature_stats.csv")
+    exog_df = _load_table("10_exog_comparison.csv")
+    optim_df = _load_table("11_storage_optimization_summary.csv")
     items: List[html.Li] = []
+
+    # Task 10: Exogenous model improvement
+    if not exog_df.empty and "nRMSE_Improvement_%" in exog_df.columns:
+        exog_df = exog_df[exog_df["Type"] == "With Exog"] if "Type" in exog_df.columns else exog_df
+        if not exog_df.empty:
+            best_improve = exog_df["nRMSE_Improvement_%"].max()
+            if pd.notna(best_improve) and best_improve > 0:
+                items.append(html.Li(f"Exogenous features improve forecast by up to {best_improve:.1f}% nRMSE."))
+
+    # Task 11: Battery optimization results
+    if not optim_df.empty and "Total_cost_EUR" in optim_df.columns:
+        pv_high = optim_df[optim_df["Scenario"] == "PV_high"] if "Scenario" in optim_df.columns else pd.DataFrame()
+        if not pv_high.empty:
+            cost = pv_high["Total_cost_EUR"].iloc[0]
+            if cost < 0:
+                items.append(html.Li(f"PV_high scenario achieves €{abs(cost):.2f} profit through exports."))
+            else:
+                items.append(html.Li(f"PV_high scenario costs €{cost:.2f} for 24h operation."))
 
     if not kpi_df.empty:
         kpi_map = {row["kpi"]: row for row in kpi_df.to_dict("records")}
@@ -550,48 +570,63 @@ def register_callbacks(app: Dash, data: DashboardData) -> None:
         Input(IDS["optimization"]["scenario_dropdown"], "value"),
     )
     def _optimization_section(scenario: Optional[str]):
+        # Try storage_summary first, fallback to optim_summary_11
         summary = data.storage_summary
+        if summary.empty:
+            summary = data.optim_summary_11
+
         if summary.empty:
             empty_fig = _empty_figure("No storage optimisation data available")
             return ("--", "--", "--", "--", empty_fig, empty_fig)
-        if scenario and scenario in summary["Scenario"].values:
+        if scenario and "Scenario" in summary.columns and scenario in summary["Scenario"].values:
             scenario_row = summary[summary["Scenario"] == scenario].iloc[0]
         else:
             scenario_row = summary.iloc[0]
 
-        cost = format_number(scenario_row.get("Total_cost_EUR"), suffix=" €")
-        bought = format_number(scenario_row.get("Energy_bought_kWh"), suffix=" kWh")
-        sold = format_number(scenario_row.get("Energy_sold_kWh"), suffix=" kWh")
+        # Handle different column name conventions
+        cost_col = "Total_cost_EUR" if "Total_cost_EUR" in summary.columns else "Total_cost"
+        bought_col = "Grid_import_kWh" if "Grid_import_kWh" in summary.columns else "Energy_bought_kWh"
+        sold_col = "Grid_export_kWh" if "Grid_export_kWh" in summary.columns else "Energy_sold_kWh"
+
+        cost = format_number(scenario_row.get(cost_col), suffix=" €")
+        bought = format_number(scenario_row.get(bought_col), suffix=" kWh")
+        sold = format_number(scenario_row.get(sold_col), suffix=" kWh")
         cycles = format_number(scenario_row.get("Battery_cycles"))
 
-        soc_fig = px.bar(
-            summary,
-            x="Scenario",
-            y=["SOC_min_kWh", "SOC_max_kWh"],
-            title="Battery state of charge",
-            labels={"value": "Energy (kWh)", "Scenario": "Scenario"},
-        )
-        soc_fig.update_layout(barmode="group")
-        if "Scenario" in summary.columns and not summary.empty:
-            highlight_mask = summary["Scenario"] == scenario_row.get("Scenario")
-            highlight_colors = ["#1E90FF" if flag else "#cbd5f5" for flag in highlight_mask]
-            for trace in soc_fig.data:
-                trace.update(marker_color=highlight_colors)
+        # SOC Graph
+        soc_min_col = "SOC_min_kWh" if "SOC_min_kWh" in summary.columns else "SOC_min"
+        soc_max_col = "SOC_max_kWh" if "SOC_max_kWh" in summary.columns else "SOC_max"
+
+        if soc_min_col in summary.columns and soc_max_col in summary.columns:
+            soc_fig = px.bar(
+                summary,
+                x="Scenario",
+                y=[soc_min_col, soc_max_col],
+                title="Battery State of Charge Range",
+                labels={"value": "Energy (kWh)", "Scenario": "Scenario"},
+                color_discrete_sequence=["#1E90FF", "#00B386"]
+            )
+            soc_fig.update_layout(barmode="group")
+        else:
+            soc_fig = _empty_figure("No SOC data available")
         soc_fig = _apply_fig_style(soc_fig, height=360)
 
-        energy_fig = px.bar(
-            summary,
-            x="Scenario",
-            y=["Energy_bought_kWh", "Energy_sold_kWh"],
-            title="Grid import vs export",
-            labels={"value": "Energy (kWh)", "Scenario": "Scenario"},
-        )
-        energy_fig.update_layout(barmode="group")
-        if "Scenario" in summary.columns and not summary.empty:
-            highlight_mask = summary["Scenario"] == scenario_row.get("Scenario")
-            highlight_colors = ["#00B386" if flag else "#c4f5e5" for flag in highlight_mask]
-            for trace in energy_fig.data:
-                trace.update(marker_color=highlight_colors)
+        # Energy Graph
+        import_col = "Grid_import_kWh" if "Grid_import_kWh" in summary.columns else "Energy_bought_kWh"
+        export_col = "Grid_export_kWh" if "Grid_export_kWh" in summary.columns else "Energy_sold_kWh"
+
+        if import_col in summary.columns and export_col in summary.columns:
+            energy_fig = px.bar(
+                summary,
+                x="Scenario",
+                y=[import_col, export_col],
+                title="Grid Import vs Export",
+                labels={"value": "Energy (kWh)", "Scenario": "Scenario"},
+                color_discrete_sequence=["#F4B400", "#00B386"]
+            )
+            energy_fig.update_layout(barmode="group")
+        else:
+            energy_fig = _empty_figure("No energy data available")
         energy_fig = _apply_fig_style(energy_fig, height=360)
 
         return cost, bought, sold, cycles, soc_fig, energy_fig
@@ -801,17 +836,51 @@ def register_callbacks(app: Dash, data: DashboardData) -> None:
         [Input(IDS["pipeline"]["tabs"], "active_tab")],
     )
     def _update_pipeline_graphs(active_tab):
-        # Pipeline Graph
+        # Pipeline Graph - Forecast Overlay
         if data.pipeline_predictions.empty:
             fig_pipe = _empty_figure("No pipeline predictions available")
         else:
             df = data.pipeline_predictions
             fig_pipe = go.Figure()
-            if "Actual" in df.columns:
-                fig_pipe.add_trace(go.Scatter(x=df["timestamp"], y=df["Actual"], name="Actual", line=dict(color="black", width=1)))
-            for col in df.columns:
-                if col not in ["timestamp", "Actual"]:
-                    fig_pipe.add_trace(go.Scatter(x=df["timestamp"], y=df[col], name=col, mode="lines", opacity=0.7))
+
+            # Handle wide or long format
+            if "y_true" in df.columns:
+                # Long format from notebook 9
+                actual_col = "y_true"
+                pred_col = "y_pred"
+                model_col = "model_name"
+
+                # Plot actual values (once, from first model)
+                first_model = df[model_col].unique()[0] if model_col in df.columns else None
+                if first_model:
+                    actual_df = df[df[model_col] == first_model]
+                    fig_pipe.add_trace(go.Scatter(
+                        x=actual_df["timestamp"],
+                        y=actual_df[actual_col],
+                        name="Actual",
+                        line=dict(color="black", width=2)
+                    ))
+                    # Plot each model's predictions
+                    colors = ["#1E90FF", "#00B386", "#F4B400", "#EF6C00", "#8E24AA"]
+                    for idx, model in enumerate(df[model_col].unique()):
+                        model_df = df[df[model_col] == model]
+                        fig_pipe.add_trace(go.Scatter(
+                            x=model_df["timestamp"],
+                            y=model_df[pred_col],
+                            name=model,
+                            mode="lines",
+                            line=dict(color=colors[idx % len(colors)], width=1.5),
+                            opacity=0.8
+                        ))
+            else:
+                # Wide format
+                if "Actual" in df.columns:
+                    fig_pipe.add_trace(go.Scatter(x=df["timestamp"], y=df["Actual"], name="Actual", line=dict(color="black", width=2)))
+                for col in df.columns:
+                    if col not in ["timestamp", "Actual", "day_idx"]:
+                        fig_pipe.add_trace(go.Scatter(x=df["timestamp"], y=df[col], name=col, mode="lines", opacity=0.7))
+
+            fig_pipe.update_layout(title="Forecast Overlay (7-Day Rolling)")
             fig_pipe = _apply_fig_style(fig_pipe)
 
         # Pipeline Metrics
@@ -833,29 +902,35 @@ def register_callbacks(app: Dash, data: DashboardData) -> None:
             if not y_cols:
                 fig_pipe_metrics = _empty_figure("No valid metrics columns found")
             else:
-                fig_pipe_metrics = px.bar(df, x="model_name", y=y_cols, barmode="group")
+                fig_pipe_metrics = px.bar(df, x="model_name", y=y_cols, barmode="group",
+                                          color_discrete_sequence=["#1E90FF", "#00B386", "#F4B400"])
+                fig_pipe_metrics.update_layout(title="Model Performance Comparison")
                 fig_pipe_metrics = _apply_fig_style(fig_pipe_metrics)
 
-        # Exog Graph
+        # Exog Graph - Predictions comparison
         if data.exog_predictions.empty:
             fig_exog = _empty_figure("No exogenous predictions available")
         else:
             df = data.exog_predictions
             fig_exog = go.Figure()
             if "Actual" in df.columns:
-                fig_exog.add_trace(go.Scatter(x=df["timestamp"], y=df["Actual"], name="Actual", line=dict(color="black", width=1)))
+                fig_exog.add_trace(go.Scatter(x=df["timestamp"], y=df["Actual"], name="Actual", line=dict(color="black", width=2)))
             for col in df.columns:
                 if col not in ["timestamp", "Actual"]:
                     fig_exog.add_trace(go.Scatter(x=df["timestamp"], y=df[col], name=col, mode="lines", opacity=0.7))
+            fig_exog.update_layout(title="AR-only vs Exogenous Model Predictions")
             fig_exog = _apply_fig_style(fig_exog)
 
-        # Exog Metrics
+        # Exog Metrics - Bar chart comparison
         if data.exog_metrics.empty:
             fig_exog_metrics = _empty_figure("No exogenous metrics available")
         else:
             df = data.exog_metrics.copy()
-            if "model_name" not in df.columns:
-                df["model_name"] = df.index
+            # Handle different column name conventions
+            model_col = "Model" if "Model" in df.columns else "model_name"
+            if model_col not in df.columns:
+                df["Model"] = df.index
+                model_col = "Model"
 
             # Determine available metrics
             y_cols = []
@@ -868,7 +943,15 @@ def register_callbacks(app: Dash, data: DashboardData) -> None:
             if not y_cols:
                 fig_exog_metrics = _empty_figure("No valid metrics columns found")
             else:
-                fig_exog_metrics = px.bar(df, x="model_name", y=y_cols, barmode="group")
+                # Color by Type if available (Baseline vs With Exog)
+                if "Type" in df.columns:
+                    fig_exog_metrics = px.bar(df, x=model_col, y="nRMSE", color="Type",
+                                              color_discrete_map={"Baseline": "#1E90FF", "With Exog": "#00B386"},
+                                              title="nRMSE: AR-only vs Exogenous Features")
+                else:
+                    fig_exog_metrics = px.bar(df, x=model_col, y=y_cols, barmode="group",
+                                              color_discrete_sequence=["#1E90FF", "#00B386", "#F4B400"])
+                    fig_exog_metrics.update_layout(title="Model Performance Comparison")
                 fig_exog_metrics = _apply_fig_style(fig_exog_metrics)
 
         # Exog Importance
@@ -876,8 +959,9 @@ def register_callbacks(app: Dash, data: DashboardData) -> None:
             fig_exog_imp = _empty_figure("No feature importance available")
         else:
             df = data.exog_importance.head(20).copy()
-            fig_exog_imp = px.bar(df, x="importance", y="feature", orientation="h")
-            fig_exog_imp.update_layout(yaxis={'categoryorder':'total ascending'})
+            fig_exog_imp = px.bar(df, x="importance", y="feature", orientation="h",
+                                  color="importance", color_continuous_scale=["#1E90FF", "#00B386"])
+            fig_exog_imp.update_layout(yaxis={'categoryorder':'total ascending'}, title="XGBoost Feature Importance")
             fig_exog_imp = _apply_fig_style(fig_exog_imp)
 
         return fig_pipe, fig_pipe_metrics, fig_exog, fig_exog_metrics, fig_exog_imp
@@ -890,32 +974,112 @@ def register_callbacks(app: Dash, data: DashboardData) -> None:
         ],
         [Input(IDS["optimization"]["scenario_dropdown"], "value")],  # Dummy input to trigger on load
     )
-    def _update_optimization_11(_):
-        # Summary Table
+    def _update_optimization_11(selected_scenario):
+        # Summary Table from Notebook 11
         if data.optim_summary_11.empty:
             table_data = []
             table_columns = []
         else:
             df = data.optim_summary_11.copy()
             numeric_cols = df.select_dtypes(include=["number"]).columns
-            df[numeric_cols] = df[numeric_cols].round(2)
+            df[numeric_cols] = df[numeric_cols].round(3)
             table_data = df.to_dict("records")
-            table_columns = [{"name": col.replace("_", " "), "id": col} for col in df.columns]
+            # Format column names nicely
+            col_names = {
+                "Scenario": "Scenario",
+                "Total_cost_EUR": "Total Cost (€)",
+                "PV_generation_kWh": "PV Gen (kWh)",
+                "Grid_import_kWh": "Grid Import (kWh)",
+                "Grid_export_kWh": "Grid Export (kWh)",
+                "Self_consumption_kWh": "Self Consumption (kWh)",
+                "Battery_cycles": "Battery Cycles",
+                "SOC_max_kWh": "SOC Max (kWh)",
+                "SOC_min_kWh": "SOC Min (kWh)"
+            }
+            table_columns = [{"name": col_names.get(col, col.replace("_", " ")), "id": col} for col in df.columns]
 
-        # Sensitivity Graph
-        if data.optim_sensitivity_11.empty:
-            fig_sens = _empty_figure("No sensitivity data available")
-        else:
+        # Create dispatch visualization instead of sensitivity
+        # Read the dispatch schedule if available
+        dispatch_path = data.tables_path / "11_optimal_dispatch_schedule.csv"
+        if dispatch_path.exists():
+            try:
+                dispatch_df = pd.read_csv(dispatch_path, parse_dates=["timestamp"])
+                # Filter by selected scenario if available
+                if selected_scenario and "Scenario" in dispatch_df.columns:
+                    dispatch_df = dispatch_df[dispatch_df["Scenario"] == selected_scenario]
+                elif "Scenario" in dispatch_df.columns:
+                    dispatch_df = dispatch_df[dispatch_df["Scenario"] == dispatch_df["Scenario"].iloc[0]]
+
+                fig_dispatch = go.Figure()
+
+                # SOC trace
+                if "SOC" in dispatch_df.columns:
+                    fig_dispatch.add_trace(go.Scatter(
+                        x=dispatch_df["timestamp"],
+                        y=dispatch_df["SOC"],
+                        name="SOC (kWh)",
+                        mode="lines",
+                        line=dict(color="#1E90FF", width=2),
+                        yaxis="y"
+                    ))
+
+                # Grid power trace (positive = import, negative = export)
+                if "Grid_power" in dispatch_df.columns:
+                    fig_dispatch.add_trace(go.Bar(
+                        x=dispatch_df["timestamp"],
+                        y=dispatch_df["Grid_power"],
+                        name="Grid Power (kW)",
+                        marker_color=["#00B386" if v >= 0 else "#F4B400" for v in dispatch_df["Grid_power"]],
+                        yaxis="y2",
+                        opacity=0.6
+                    ))
+
+                # Demand and PV traces
+                if "Demand" in dispatch_df.columns:
+                    fig_dispatch.add_trace(go.Scatter(
+                        x=dispatch_df["timestamp"],
+                        y=dispatch_df["Demand"],
+                        name="Demand (kW)",
+                        mode="lines",
+                        line=dict(color="black", width=1.5, dash="dot"),
+                        yaxis="y2"
+                    ))
+
+                if "PV" in dispatch_df.columns:
+                    fig_dispatch.add_trace(go.Scatter(
+                        x=dispatch_df["timestamp"],
+                        y=dispatch_df["PV"],
+                        name="PV (kW)",
+                        mode="lines",
+                        line=dict(color="#F4B400", width=1.5),
+                        yaxis="y2"
+                    ))
+
+                scenario_label = selected_scenario or "PV_low"
+                fig_dispatch.update_layout(
+                    title=f"24-Hour Dispatch Schedule ({scenario_label})",
+                    yaxis=dict(title="SOC (kWh)", side="left", range=[0, 12]),
+                    yaxis2=dict(title="Power (kW)", side="right", overlaying="y", range=[-6, 6]),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                    hovermode="x unified"
+                )
+                fig_dispatch = _apply_fig_style(fig_dispatch)
+            except Exception:
+                fig_dispatch = _empty_figure("Error loading dispatch data")
+        elif not data.optim_sensitivity_11.empty:
+            # Fallback to sensitivity analysis if dispatch not available
             df_sens = data.optim_sensitivity_11.sort_values("Battery_capacity_kWh")
-            fig_sens = px.line(
+            fig_dispatch = px.line(
                 df_sens,
                 x="Battery_capacity_kWh",
                 y="Total_cost",
                 markers=True,
                 title="Cost Sensitivity to Battery Capacity"
             )
-            fig_sens = _apply_fig_style(fig_sens)
+            fig_dispatch = _apply_fig_style(fig_dispatch)
+        else:
+            fig_dispatch = _empty_figure("No dispatch or sensitivity data available")
 
-        return table_data, table_columns, fig_sens
+        return table_data, table_columns, fig_dispatch
 
     app.logger.info("Registered %d callbacks", len(app.callback_map))

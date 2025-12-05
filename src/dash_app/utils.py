@@ -238,23 +238,38 @@ def load_dashboard_data(tables_path: Optional[Path] = None) -> DashboardData:
         )
 
     # Load Notebook 9 & 10 results
-    pipeline_metrics = _read_csv(path / "09_forecast_metrics_summary.csv")
-    pipeline_metrics = _clean_numeric(pipeline_metrics, ["MAE", "RMSE", "nRMSE"])
+    # Try .csv.csv first (newer format), fallback to .csv
+    pipeline_metrics = _read_csv(path / "09_forecast_metrics_summary.csv.csv")
+    if pipeline_metrics.empty:
+        pipeline_metrics = _read_csv(path / "09_forecast_metrics_summary.csv")
+    pipeline_metrics = _clean_numeric(pipeline_metrics, ["MAE", "MAE_mean", "MAE_std", "RMSE", "RMSE_mean", "RMSE_std", "nRMSE", "nRMSE_mean", "nRMSE_std"])
 
-    pipeline_predictions = _read_csv(path / "09_forecast_predictions.csv", parse_dates=["timestamp"])
+    pipeline_predictions = _read_csv(path / "09_forecast_predictions.csv.csv", parse_dates=["timestamp"])
+    if pipeline_predictions.empty:
+        pipeline_predictions = _read_csv(path / "09_forecast_predictions.csv", parse_dates=["timestamp"])
     if not pipeline_predictions.empty:
         pipeline_predictions = pipeline_predictions.sort_values("timestamp").reset_index(drop=True)
 
-    exog_metrics = _read_csv(path / "10_exog_models_metrics.csv")
-    exog_metrics = _clean_numeric(exog_metrics, ["MAE", "RMSE", "nRMSE"])
+    # Task 10: Load exog comparison (new format)
+    exog_metrics = _read_csv(path / "10_exog_comparison.csv")
+    if exog_metrics.empty:
+        exog_metrics = _read_csv(path / "10_exog_models_metrics.csv")
+    exog_metrics = _clean_numeric(exog_metrics, ["MAE", "RMSE", "nRMSE", "MAE_Improvement_%", "nRMSE_Improvement_%"])
 
     exog_predictions = _read_csv(path / "10_exog_models_predictions.csv", parse_dates=["timestamp"])
     if not exog_predictions.empty:
         exog_predictions = exog_predictions.sort_values("timestamp").reset_index(drop=True)
 
-    exog_importance = _read_csv(path / "10_exog_feature_importance.csv")
+    exog_importance = _read_csv(path / "10_feature_importance.csv")
+    if exog_importance.empty:
+        exog_importance = _read_csv(path / "10_exog_feature_importance.csv")
+    # Normalize column names
+    if "Importance" in exog_importance.columns:
+        exog_importance = exog_importance.rename(columns={"Importance": "importance"})
+    if "Feature" in exog_importance.columns:
+        exog_importance = exog_importance.rename(columns={"Feature": "feature"})
     exog_importance = _clean_numeric(exog_importance, ["importance"])
-    if not exog_importance.empty:
+    if not exog_importance.empty and "importance" in exog_importance.columns:
         exog_importance = exog_importance.sort_values("importance", ascending=False).reset_index(drop=True)
 
     # Load Notebook 11 results

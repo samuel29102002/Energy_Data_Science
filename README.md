@@ -154,48 +154,72 @@ Place the provided `train_252145.csv`, `forecast.csv`, and `optimisation.csv` fi
 
 ### Dash App
 
-- Launch the interactive dashboard for exploratory analysis:
+Launch the interactive dashboard for exploratory analysis:
 
 ```bash
 python src/dash_app/app.py
 ```
 
-- Open the printed URL (default `http://127.0.0.1:8050`). The **Overview** tab tracks key metrics, the **Visualisation Studio** tab provides interactive plot selection (timeseries, distributions, boxplots, heatmaps, profiles), the **Decomposition** tab shows STL components and typical profiles with seasonality strengths, the **PV Cleaning** tab compares imputation strategies with live overlays and summary tables, and the **Features** tab surfaces ranking tables and distributions on demand.
+Open the printed URL (default `http://127.0.0.1:8050`). The dashboard includes:
+
+- **Overview**: Key metrics, insights from Task 10/11, forecast model comparison
+- **ML Models**: Feature importance, residual analysis, model metrics
+- **Forecasting**: Daily overlay predictions with walk-forward evaluation
+- **Pipeline**: Task 9 rolling forecasts + Task 10 exogenous model comparison
+- **Optimization**: Task 11 battery dispatch with PV_low/PV_high scenarios
+- **Data/Cleaning**: Raw vs cleaned data with missingness analysis
+- **About**: Project summary and technical stack
 
 ---
 
 ## 📊 Results
 
-Key outputs include:
+### Key Outputs
 
-- Data cleaning comparison (PV_mod1 with 3 methods)
-- Feature importance rankings
-- Demand decomposition (trend, seasonality, residual) with typical weekday/weekend and monthly profiles
-- ARIMA/SARIMA demand forecasts with whole-split and walk-forward evaluation metrics
-- XGBoost demand forecasts with feature importance diagnostics and stat-model comparison
-- Rolling 7-day forecast pipeline comparing ML, statistical, and naive baselines
-- ARMA vs ML forecasting performance (normalized RMSE, MAE)
-- Exogenous vs autoregressive models
-- Optimal storage control decisions for 24h horizon
+| Task | Description | Key Metrics |
+|------|-------------|-------------|
+| **Task 3** | EDA & Visualization | Time series, distributions, heatmaps, daily profiles |
+| **Task 4** | PV Cleaning | Linear, cubic spline, KNN imputation compared |
+| **Task 5** | Feature Engineering | 12 features ranked by MI and permutation importance |
+| **Task 6** | Time Series Decomposition | STL components, seasonality strength 0.84 |
+| **Task 7** | Statistical Models | ARIMA(2,0,2), walk-forward RMSE 0.27 |
+| **Task 8** | ML Models | XGBoost n=600, lr=0.05, depth=6; RMSE 0.23 |
+| **Task 9** | Forecasting Pipeline | 7-day rolling forecast; Naive RMSE 0.216 |
+| **Task 10** | Exogenous Models | XGBoost +1.86% nRMSE, ARIMAX +1.33% nRMSE |
+| **Task 11** | Storage Optimization | PV_low €0.64, PV_high €-0.05 (profit!) |
+
+### Storage Optimization Results (Task 11)
+
+| Scenario | Total Cost (€) | PV Gen (kWh) | Grid Import (kWh) | Grid Export (kWh) | Self-Consumption (kWh) |
+|----------|----------------|--------------|-------------------|-------------------|------------------------|
+| PV_low   | 0.637          | 1.22         | 11.16             | 0.00              | 1.22                   |
+| PV_high  | -0.046         | 12.99        | 0.00              | 0.95              | 12.04                  |
+
+### Exogenous Model Improvement (Task 10)
+
+| Model | AR-only nRMSE | With Exog nRMSE | Improvement |
+|-------|---------------|-----------------|-------------|
+| XGBoost | 0.140 | 0.137 | 1.86% |
+| ARIMA/ARIMAX | 0.168 | 0.165 | 1.33% |
 
 ---
 
 ## 🔗 Links
 
-- 📘 **Final Report PDF:** [Link to report](#)
-- 📂 **GitHub Repo:** [Link to my GitHub](https://github.com/samuel29102002/Energy_Data_Science)
+- 📂 **GitHub Repo:** [Energy_Data_Science](https://github.com/samuel29102002/Energy_Data_Science)
+- 📘 **Final Report PDF:** (to be added after submission)
 
 ---
 
 ## ✅ Submission Checklist
 
-- [ ] Report ≤25 pages with labeled figures/tables
-- [ ] Three PV cleaning methods compared (PV_mod1)
-- [ ] Feature engineering and ranking completed
-- [ ] Demand decomposition and typical profiles
-- [ ] ARMA-family models with daily walk-forward evaluation
-- [ ] ML model + hyperparameter table + comparison
-- [ ] Rolling 7-day forecast (24h horizon, 0h lead time)
-- [ ] Exogenous models evaluated with MAE & normalized RMSE
-- [ ] 24h battery optimization for PV_low and PV_high
+- [x] Report ≤25 pages with labeled figures/tables
+- [x] Three PV cleaning methods compared (PV_mod1)
+- [x] Feature engineering and ranking completed
+- [x] Demand decomposition and typical profiles
+- [x] ARMA-family models with daily walk-forward evaluation
+- [x] ML model + hyperparameter table + comparison
+- [x] Rolling 7-day forecast (24h horizon, 0h lead time)
+- [x] Exogenous models evaluated with MAE & normalized RMSE
+- [x] 24h battery optimization for PV_low and PV_high
 - [ ] GitHub repo with nbviewer access

@@ -478,6 +478,11 @@ def forecasting_page(data: DashboardData) -> html.Div:
 
 def optimization_page(data: DashboardData) -> html.Div:
     dropdown_options = [{"label": scenario, "value": scenario} for scenario in data.storage_scenarios]
+    if not dropdown_options:
+        # Fallback to Notebook 11 scenarios
+        optim_df = data.optim_summary_11
+        if not optim_df.empty and "Scenario" in optim_df.columns:
+            dropdown_options = [{"label": s, "value": s} for s in optim_df["Scenario"].unique()]
     default_value = dropdown_options[0]["value"] if dropdown_options else None
 
     return html.Div(
@@ -485,7 +490,13 @@ def optimization_page(data: DashboardData) -> html.Div:
             dbc.Card(
                 dbc.CardBody(
                     [
-                        html.Div("Scenario", className="control-label"),
+                        html.Div("Battery Storage Optimization", className="section-title"),
+                        html.P(
+                            "LP optimization minimizes grid costs by scheduling battery charge/discharge. "
+                            "Demand is forecasted via XGBoost; PV scenarios model different generation profiles.",
+                            className="about-text",
+                        ),
+                        html.Div("Scenario", className="control-label mt-3"),
                         dcc.Dropdown(
                             id=IDS["optimization"]["scenario_dropdown"],
                             options=dropdown_options,
@@ -521,7 +532,11 @@ def optimization_page(data: DashboardData) -> html.Div:
                             [
                                 dbc.Col(
                                     [
-                                        html.Div("Optimization Summary (Notebook 11)", className="section-title mt-4"),
+                                        html.Div("Optimization Summary (Task 11)", className="section-title mt-4"),
+                                        html.P(
+                                            "Results from 24-hour LP optimization with 10kWh battery, 5kW power limit, 95% efficiency.",
+                                            className="about-text",
+                                        ),
                                         _loading(dash_table.DataTable(
                                             id=IDS["optimization"]["summary_table_11"],
                                             style_table={'overflowX': 'auto'},
@@ -531,7 +546,7 @@ def optimization_page(data: DashboardData) -> html.Div:
                                                 'fontFamily': 'Inter, sans-serif'
                                             },
                                             style_header={
-                                                'backgroundColor': 'white',
+                                                'backgroundColor': '#f8fafc',
                                                 'fontWeight': 'bold',
                                                 'borderBottom': '2px solid #eee'
                                             },
@@ -550,7 +565,7 @@ def optimization_page(data: DashboardData) -> html.Div:
                             [
                                 dbc.Col(
                                     [
-                                        html.Div("Battery Sensitivity Analysis (Notebook 11)", className="section-title mt-4"),
+                                        html.Div("Dispatch Visualization", className="section-title mt-4"),
                                         _loading(dcc.Graph(id=IDS["optimization"]["sensitivity_graph_11"], responsive=True)),
                                     ],
                                     lg=12,
@@ -819,23 +834,36 @@ def about_page(_: DashboardData) -> html.Div:
             dbc.Card(
                 dbc.CardBody(
                     [
-                        html.Div("Project summary", className="section-title"),
+                        html.Div("Project Summary", className="section-title"),
                         html.P(
-                            "This interactive dashboard summarises the Energy Data Science project, combining forecasting, "
-                            "machine learning, and optimisation outputs into a single view.",
+                            "This interactive dashboard summarizes the ITS8080 Energy Data Science project, combining "
+                            "forecasting, machine learning, and optimization outputs into a single view.",
                             className="about-text",
                         ),
                         html.P(
-                            "All metrics and charts are refreshed from the latest CSV exports inside reports/tables.",
+                            "All metrics and charts are refreshed from the latest CSV exports inside reports/tables/.",
                             className="about-text",
                         ),
                         html.Hr(),
-                        html.Div("Team focus areas", className="section-title"),
+                        html.Div("Project Highlights", className="section-title"),
                         html.Ul(
                             [
-                                html.Li("Data ingestion & cleaning"),
-                                html.Li("Forecasting & ML modelling"),
-                                html.Li("Storage optimisation"),
+                                html.Li("XGBoost demand forecasting with 0.23 RMSE"),
+                                html.Li("Exogenous features improve nRMSE by 1.86% (XGBoost) and 1.33% (ARIMAX)"),
+                                html.Li("LP battery optimization: PV_high achieves €0.05 profit"),
+                                html.Li("7-day rolling forecast pipeline with Naive, SeasonalNaive, XGBoost"),
+                            ],
+                            className="about-list",
+                        ),
+                        html.Hr(),
+                        html.Div("Technical Stack", className="section-title"),
+                        html.Ul(
+                            [
+                                html.Li("Python 3.10, pandas, numpy, matplotlib"),
+                                html.Li("XGBoost 3.0.5 for ML forecasting"),
+                                html.Li("statsmodels for ARIMA/ARIMAX"),
+                                html.Li("CVXPY for LP optimization"),
+                                html.Li("Dash + Plotly for interactive visualization"),
                             ],
                             className="about-list",
                         ),
@@ -855,7 +883,12 @@ def pipeline_page(data: DashboardData) -> html.Div:
                 [
                     dbc.Tab(
                         [
-                            html.Div("Forecasting Pipeline Results (Notebook 9)", className="section-title mt-4"),
+                            html.Div("Forecasting Pipeline (Task 9)", className="section-title mt-4"),
+                            html.P(
+                                "Rolling 7-day forecast evaluated on 168 samples (2014-07-01 to 2014-07-07). "
+                                "Models: Naive, SeasonalNaive, XGBoost. Naive achieves best results with 0.216 RMSE.",
+                                className="about-text",
+                            ),
                             dbc.Row(
                                 [
                                     dbc.Col(_loading(dcc.Graph(id=IDS["pipeline"]["pipeline_graph"], responsive=True)), width=12),
@@ -873,7 +906,12 @@ def pipeline_page(data: DashboardData) -> html.Div:
                     ),
                     dbc.Tab(
                         [
-                            html.Div("Exogenous Models Results (Notebook 10)", className="section-title mt-4"),
+                            html.Div("Exogenous Models Comparison (Task 10)", className="section-title mt-4"),
+                            html.P(
+                                "AR-only vs. exogenous (hour, weekday, month, temperature, PV) feature comparison. "
+                                "XGBoost with exogenous features achieves 1.86% nRMSE improvement; ARIMAX achieves 1.33% improvement.",
+                                className="about-text",
+                            ),
                             dbc.Row(
                                 [
                                     dbc.Col(_loading(dcc.Graph(id=IDS["pipeline"]["exog_graph"], responsive=True)), width=12),
