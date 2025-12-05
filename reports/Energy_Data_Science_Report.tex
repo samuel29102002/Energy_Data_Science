@@ -597,26 +597,68 @@ XGBoost & 0.215 & 0.366 & 0.166 \\
 %===========================
 \section{Forecasting Pipeline and Validation}
 
-\subsection{Walk-Forward Validation}
-To simulate a realistic operational environment and assess model stability, I implemented a rolling forecast origin (walk-forward) validation strategy \parencite{Hyndman2021}. In this setup, the model predicts the next 24 hours, the actual data is then revealed, the window rolls forward, and the model is re-evaluated. This process is repeated over a 7-day horizon. This approach provides a more rigorous assessment of generalization error than a single static split.
+\subsection{Rolling Out-of-Sample Forecasting}
+To simulate a realistic operational environment and assess model stability, I implemented a rolling forecast origin (walk-forward) validation strategy \parencite{Hyndman2021}. The pipeline follows these specifications:
+\begin{itemize}
+    \item \textbf{Training data:} Full historical dataset (July 2013 -- June 2014, approximately 8,760 hourly observations)
+    \item \textbf{Forecast horizon:} 24 hours (one complete day)
+    \item \textbf{Lead time:} 0 hours (forecast issued at midnight for the upcoming day)
+    \item \textbf{Strategy:} Direct forecasting -- models are retrained each day using all available historical data up to the forecast cutoff
+    \item \textbf{Evaluation period:} 7 consecutive days (July 1--7, 2014)
+\end{itemize}
+
+This walk-forward approach provides a rigorous assessment of generalization error, more representative of operational deployment than a single static train-test split.
 
 \subsection{Comparative Analysis}
-I compared the performance of the XGBoost model against the best statistical model (SARIMA) and simple baselines (Naive and Seasonal Naive). Figure~\ref{fig:pipeline_overlay} illustrates the forecast trajectories for a representative day. The XGBoost model consistently aligns closer to the ground truth, exhibiting lower variance in its error distribution.
+I compared the XGBoost model against two baseline models:
+\begin{itemize}
+    \item \textbf{Naive:} Repeats the last observed value for all 24 forecast hours
+    \item \textbf{Seasonal Naive:} Uses the same hour from the previous day
+\end{itemize}
+
+Figure~\ref{fig:pipeline_overlay} illustrates the forecast trajectories for a representative day. XGBoost captures the daily demand profile more effectively, particularly during morning and evening peak periods where the naive baselines systematically under- or overestimate demand.
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.95\linewidth]{figures/fc_day_overlay_rep.png}
-  \caption{Comparison of forecasting models for a representative day. XGBoost and SARIMA track the actual demand closely, while Naive baselines lag significantly.}
+  \includegraphics[width=0.95\linewidth]{figures/09_day_overlay_rep.png}
+  \caption{Forecast comparison for a representative day (Day 1). XGBoost tracks the actual demand pattern more closely than the baseline methods, especially during peak hours.}
   \label{fig:pipeline_overlay}
 \end{figure}
 
-\subsection{Aggregate Results}
-The aggregated metrics over the full validation week (Figure~\ref{fig:pipeline_metrics}) confirm the superiority of the machine learning approach. XGBoost achieves the lowest Normalized RMSE (nRMSE), indicating it is the most reliable candidate for the downstream optimization task. The ability to incorporate multiple lag features and non-linear temporal interactions gives it a decisive edge over the univariate SARIMA model.
+\subsection{Seven-Day Forecast Performance}
+Figure~\ref{fig:pipeline_week} shows the complete 7-day forecast overlay for the best-performing model (XGBoost). The model successfully captures the general demand pattern across the evaluation period, though some extreme peaks (particularly on Day 7) present challenges.
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.8\linewidth]{figures/fc_metrics_comparison.png}
-  \caption{Aggregate performance metrics across the rolling validation window. XGBoost outperforms all other methods in both RMSE and MAE.}
+  \includegraphics[width=0.95\linewidth]{figures/09_week_overlay_best.png}
+  \caption{Seven-day rolling forecast overlay for XGBoost. The model tracks the general demand pattern effectively, with largest deviations occurring during unexpected demand spikes.}
+  \label{fig:pipeline_week}
+\end{figure}
+
+\subsection{Aggregate Results}
+Table~\ref{tab:pipeline_metrics} summarizes the aggregate performance metrics across the 7-day evaluation period. XGBoost achieves the lowest normalized RMSE (nRMSE = 0.157), confirming its suitability as the primary forecasting model for the downstream battery optimization task.
+
+\begin{table}[H]
+\centering
+\caption{Aggregate forecast performance metrics (7-day rolling validation).}
+\label{tab:pipeline_metrics}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Model} & \textbf{MAE} & \textbf{RMSE} & \textbf{nRMSE} \\
+\midrule
+XGBoost & 0.211 & 0.291 & \textbf{0.157} \\
+Naive & 0.132 & 0.301 & 0.162 \\
+Seasonal Naive & 0.185 & 0.384 & 0.207 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Figure~\ref{fig:pipeline_metrics} provides a visual comparison of the error metrics. While the Naive baseline achieves lower MAE due to the prevalence of stable low-demand periods, XGBoost's superior RMSE and nRMSE indicate better handling of demand variability and peak events.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.8\linewidth]{figures/09_metrics_comparison.png}
+  \caption{Aggregate performance metrics across the rolling validation window. XGBoost achieves the best nRMSE, indicating superior performance for downstream optimization.}
   \label{fig:pipeline_metrics}
 \end{figure}
 
@@ -626,30 +668,58 @@ The aggregated metrics over the full validation week (Figure~\ref{fig:pipeline_m
 \section{Integration of Exogenous Variables}
 
 \subsection{Multivariate Modeling}
-Household energy demand is not an isolated system; it is heavily influenced by external environmental factors. I extended the modeling framework to include exogenous variables, specifically weather data (temperature and solar irradiance) obtained from the ERA5 reanalysis dataset \parencite{Hersbach2020}.
+Household energy demand is not an isolated system; it is heavily influenced by external environmental factors. I extended the modeling framework to include exogenous variables, specifically weather and price data:
 \begin{itemize}
-    \item \textbf{Temperature:} Affects heating and cooling loads (HVAC).
-    \item \textbf{Solar Irradiance:} While primarily driving PV generation, it also correlates with ambient light and temperature, indirectly influencing demand.
+    \item \textbf{Temperature (\si{\degreeCelsius}):} Affects heating and cooling loads (HVAC).
+    \item \textbf{Solar Irradiance (W/m\textsuperscript{2}):} Shortwave and direct radiation influence ambient conditions and correlate with demand patterns.
+    \item \textbf{Cloud Cover (\%):} Affects both solar generation and indoor lighting usage.
+    \item \textbf{Electricity Price (\euro{}/kWh):} Dynamic tariffs may influence load-shifting behavior.
 \end{itemize}
 
-\subsection{Impact Assessment}
-I compared the performance of the univariate XGBoost model against a multivariate version enriched with these weather features. Figure~\ref{fig:exog_comparison} illustrates the forecast comparison. The inclusion of exogenous variables provides a marginal but consistent improvement in accuracy, particularly during periods of extreme weather where the univariate history might not fully capture the demand surge.
+\subsection{Comparative Analysis: AR-Only vs. Exogenous Models}
+To quantify the value of exogenous variables, I trained both autoregressive-only (AR-only) and exogenous-enriched variants of XGBoost and ARIMA models. The AR-only models use 8 features: five demand lags (1, 2, 3, 24, 48 hours), cyclical hour encoding (sine/cosine), and a weekend indicator. The exogenous models add 5 weather/price features, totaling 13 predictors.
+
+Table~\ref{tab:exog_comparison} summarizes the performance comparison on the 7-day validation period.
+
+\begin{table}[H]
+\centering
+\caption{Performance comparison: AR-only vs. exogenous models.}
+\label{tab:exog_comparison}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Model} & \textbf{MAE} & \textbf{nRMSE} & \textbf{MAE Impr. (\%)} & \textbf{nRMSE Impr. (\%)} \\
+\midrule
+XGBoost (AR only) & 0.175 & 0.140 & -- & -- \\
+XGBoost (with exog) & 0.176 & 0.137 & -0.63 & \textbf{+1.86} \\
+ARIMA (AR only) & 0.243 & 0.168 & -- & -- \\
+ARIMAX (with exog) & 0.235 & 0.165 & +3.31 & \textbf{+1.33} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The results show that exogenous variables provide modest but consistent improvements in nRMSE: 1.86\% for XGBoost and 1.33\% for ARIMAX. While the MAE improvement for XGBoost is negligible, ARIMAX shows a 3.31\% MAE reduction. This suggests that exogenous features help reduce prediction variance, particularly during weather-driven demand anomalies.
+
+\subsection{Forecast Visualization}
+Figure~\ref{fig:exog_comparison} illustrates the forecast comparison between AR-only and exogenous models. Both XGBoost variants closely track actual demand, with the exogenous model showing slightly improved peak detection.
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.95\linewidth]{figures/exog_forecast_comparison.png}
-  \caption{Forecast comparison with exogenous variables. The multivariate model (XGBoost+Exog) shows improved tracking of demand anomalies driven by weather.}
+  \includegraphics[width=0.95\linewidth]{figures/10_forecast_comparison.png}
+  \caption{Forecast comparison: AR-only vs. exogenous models. XGBoost with exogenous features shows marginally improved tracking during variable demand periods.}
   \label{fig:exog_comparison}
 \end{figure}
 
-Feature importance analysis (Figure~\ref{fig:exog_importance}) reveals that while autoregressive lags remain the strongest predictors, temperature is a significant contributor. This confirms that weather sensitivity is a measurable component of the household's energy profile and should be included in robust HEMS forecasting systems.
+\subsection{Feature Importance Analysis}
+Figure~\ref{fig:exog_importance} presents the feature importance rankings from the XGBoost model with exogenous variables. The first lag (demand\_lag\_1) dominates with approximately 20\% importance, followed by cyclical hour encodings and additional autoregressive terms. Among exogenous features, temperature contributes most significantly (~7\%), followed by solar radiation and price.
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.9\linewidth]{figures/exog_feature_importance.png}
-  \caption{Feature importance for the exogenous XGBoost model. Temperature emerges as a key external driver alongside the autoregressive terms.}
+  \includegraphics[width=0.9\linewidth]{figures/10_feature_importance.png}
+  \caption{Feature importance by category. Autoregressive lags (blue) remain dominant, while exogenous weather features (green) provide supplementary predictive value.}
   \label{fig:exog_importance}
 \end{figure}
+
+The analysis confirms that while autoregressive structure captures most demand dynamics, exogenous weather variables add measurable value. For operational HEMS deployment, the marginal complexity of including weather forecasts is justified by the improved accuracy, particularly for grid-interactive optimization scenarios.
 
 %===========================
 % 11. Optimization
@@ -657,32 +727,63 @@ Feature importance analysis (Figure~\ref{fig:exog_importance}) reveals that whil
 \section{Battery Storage Optimization}
 
 \subsection{Problem Formulation}
-The ultimate goal of the data science lifecycle in this context is actionable decision-making. I formulated a Linear Programming (LP) problem to optimize the dispatch of a battery storage system within the HEMS. The objective is to minimize the total electricity cost over a 24-hour horizon $T=24$ \parencite{Maciejowski2002}.
-
-The objective function is defined as:
+The goal of the optimization is to find the cheapest strategy for the next 24 hours while ensuring feasibility. Following the assignment specification, I formulated a Linear Programming (LP) problem to minimize the net electricity cost:
 \begin{equation}
-    \min \sum_{t=1}^{T} \left( P_{grid}^{import}(t) \cdot C_{buy}(t) - P_{grid}^{export}(t) \cdot C_{sell}(t) \right)
+    \min \sum_{t=1}^{n} \left( Gr_{c,t} - Gr_{P,t} \right)
 \end{equation}
+where $Gr_c$ is the cost of buying electricity from the grid, $Gr_P$ is the profit from selling (injecting) energy to the grid, and $n=24$ hours.
 
-Subject to the following physical and operational constraints:
-\begin{align}
-    & P_{load}(t) = P_{pv}(t) + P_{grid}^{import}(t) - P_{grid}^{export}(t) + P_{batt}^{dis}(t) - P_{batt}^{chg}(t) \quad \text{(Energy Balance)} \\
-    & SOC(t) = SOC(t-1) + \eta_{chg} P_{batt}^{chg}(t) \Delta t - \frac{1}{\eta_{dis}} P_{batt}^{dis}(t) \Delta t \quad \text{(Battery Dynamics)} \\
-    & 0 \leq SOC(t) \leq E_{max} \quad \text{(Capacity Limits)} \\
-    & 0 \leq P_{batt}^{chg}(t), P_{batt}^{dis}(t) \leq P_{max} \quad \text{(Power Limits)}
-\end{align}
+The system configuration includes:
+\begin{itemize}
+    \item PV system: 5 kW maximum power flow capacity
+    \item Home battery: 10 kWh capacity, 5 kW charge/discharge power flow capacity
+    \item Grid connection: 5 kW maximum power flow capacity
+    \item Round-trip efficiency: 95\%
+\end{itemize}
 
-\subsection{Scenario Analysis and Results}
-I evaluated the optimization model under varying solar generation scenarios. Figure~\ref{fig:optim_combined} visualizes the optimal dispatch strategy. The system intelligently charges the battery during periods of excess PV generation or low grid prices and discharges during peak price hours or when PV is insufficient.
+\subsection{Demand Forecasting}
+As specified in the task, price, PV generation, and weather data are assumed to be given (ideal forecasts) from the \texttt{optimisation.csv} file. I used the trained XGBoost model from previous tasks to forecast the demand for the 24-hour optimization horizon (2014-07-08). The model was trained on 8,711 samples from the historical data (2013-07-01 to 2014-06-30) using the same AR-only feature set as Task 9.
+
+\subsection{Scenario Analysis: PV\_low vs PV\_high}
+I evaluated the optimization model under two PV generation scenarios provided in the dataset. Table~\ref{tab:optim_summary} summarizes the results.
+
+\begin{table}[H]
+\centering
+\caption{Optimization results for PV\_low and PV\_high scenarios.}
+\label{tab:optim_summary}
+\begin{tabular}{lcccccc}
+\toprule
+\textbf{Scenario} & \textbf{Cost (€)} & \textbf{PV (kWh)} & \textbf{Import (kWh)} & \textbf{Export (kWh)} & \textbf{Self-cons. (kWh)} & \textbf{Cycles} \\
+\midrule
+PV\_low & 0.637 & 1.22 & 11.16 & 0.00 & 1.22 & 1.07 \\
+PV\_high & -0.046 & 12.99 & 0.00 & 0.95 & 12.04 & 0.75 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Key observations:
+\begin{itemize}
+    \item \textbf{PV\_low scenario}: With minimal solar generation (1.22 kWh), the system relies heavily on grid imports (11.16 kWh). The battery cycles 1.07 times, primarily charging during low-price periods and discharging during high-price periods to minimize costs.
+    \item \textbf{PV\_high scenario}: High solar generation (12.99 kWh) nearly covers the total demand (14.38 kWh). The system achieves negative costs (profit of €0.046) by exporting excess energy. No grid imports are required.
+    \item \textbf{Cost savings}: The PV\_high scenario saves €0.68 compared to PV\_low, demonstrating a 107\% relative cost reduction.
+\end{itemize}
+
+\subsection{Optimal Dispatch Visualization}
+Figure~\ref{fig:optim_combined} compares the optimal control profiles for both scenarios. The upper row shows the PV\_low scenario where the battery compensates for insufficient solar generation through strategic grid imports. The lower row illustrates the PV\_high scenario where the battery stores excess solar energy for later use.
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.95\linewidth]{figures/optimization_combined.png}
-  \caption{Optimal battery dispatch schedule. The system effectively shifts energy to minimize cost, leveraging arbitrage opportunities and self-consumption.}
+  \includegraphics[width=0.95\linewidth]{figures/11_optimization_combined.png}
+  \caption{Optimal battery dispatch: PV\_low (top) vs PV\_high (bottom). Left: demand and PV profiles; center: battery SOC; right: grid exchange (positive = import, negative = export).}
   \label{fig:optim_combined}
 \end{figure}
 
-The optimization results demonstrate significant economic benefits. By coupling accurate demand and PV forecasts with the LP solver, the HEMS can reduce daily energy costs by maximizing self-consumption and engaging in price arbitrage. This highlights the tangible value of the complete data science pipeline, from raw data to optimized control.
+The optimization effectively leverages the battery for:
+\begin{itemize}
+    \item \textbf{Peak shaving}: Discharging during high-price evening hours
+    \item \textbf{Solar storage}: Storing midday PV surplus for later consumption
+    \item \textbf{Price arbitrage}: Charging during low-price periods when grid import is necessary
+\end{itemize}
 
 \section{Discussion and Limitations}
 While the proposed framework demonstrates strong performance, several limitations warrant discussion:

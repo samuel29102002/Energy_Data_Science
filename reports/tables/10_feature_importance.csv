@@ -1,0 +1,14 @@
+Feature,Importance,Category
+Cloud_cover (%),0.052022282,Exogenous
+demand_lag_3,0.0526323,Autoregressive
+Price,0.05389726,Exogenous
+direct_radiation (W/m²),0.055965006,Exogenous
+Shortwave_radiation (W/m²),0.057711523,Exogenous
+is_weekend,0.06245383,Time
+Temperature,0.06612442,Exogenous
+demand_lag_48,0.068861805,Autoregressive
+demand_lag_24,0.07289697,Autoregressive
+hour_sin,0.075717345,Time
+demand_lag_2,0.09096778,Autoregressive
+hour_cos,0.096691415,Time
+demand_lag_1,0.19405803,Autoregressive
