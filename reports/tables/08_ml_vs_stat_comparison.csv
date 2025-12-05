@@ -1,0 +1,5 @@
+Model,MAE,RMSE,nRMSE,Type
+"ARIMA(2,1,2)",0.22,0.292,0.247,Statistical
+"SARIMA(1,1,1)(1,1,1,24)",0.139,0.234,0.199,Statistical
+"SARIMA(2,1,1)(0,1,1,24)",0.139,0.233,0.198,Statistical
+XGBoost,0.215,0.366,0.166,ML
