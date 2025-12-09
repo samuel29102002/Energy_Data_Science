@@ -374,7 +374,7 @@ def register_callbacks(app: Dash, data: DashboardData) -> None:
         Input(IDS["routing"]["location"], "pathname"),
     )
     def _populate_overview_kpis(pathname: str):
-        mean_demand, peak_hour, pv_share, missing = _build_overview_kpis(data)
+        avg_rmse, best_model, cost_savings, accuracy = _build_overview_kpis(data)
         summary_block = html.Div(
             [
                 overview_summary.summary,
@@ -383,7 +383,7 @@ def register_callbacks(app: Dash, data: DashboardData) -> None:
             ],
             className="summary-wrapper",
         )
-        return mean_demand, peak_hour, pv_share, missing, summary_block
+        return avg_rmse, best_model, cost_savings, accuracy, summary_block
 
     @app.callback(
         Output(IDS["overview"]["timeseries_graph"], "figure"),

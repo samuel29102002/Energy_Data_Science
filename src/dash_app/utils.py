@@ -127,14 +127,22 @@ def load_dashboard_data(tables_path: Optional[Path] = None) -> DashboardData:
         ],
     )
 
-    ml_split_metrics = _read_csv(path / "ml_split_metrics.csv")
+    # Prefer newer 08_ prefixed files from Notebook 08
+    ml_split_metrics = _read_csv(path / "08_ml_split_metrics.csv")
+    if ml_split_metrics.empty:
+        ml_split_metrics = _read_csv(path / "ml_split_metrics.csv")
     ml_split_metrics = _clean_numeric(ml_split_metrics, ["MAE", "RMSE", "nRMSE"])
 
-    ml_split_predictions = _read_csv(path / "ml_split_predictions.csv", parse_dates=["timestamp"])
+    ml_split_predictions = _read_csv(path / "08_ml_split_predictions.csv", parse_dates=["timestamp"])
+    if ml_split_predictions.empty:
+        ml_split_predictions = _read_csv(path / "ml_split_predictions.csv", parse_dates=["timestamp"])
     if not ml_split_predictions.empty:
         ml_split_predictions = ml_split_predictions.sort_values("timestamp").reset_index(drop=True)
 
-    ml_feature_importance = _read_csv(path / "ml_feature_importance.csv")
+    # Prefer newer 08_ prefixed feature importance file
+    ml_feature_importance = _read_csv(path / "08_feature_importance.csv")
+    if ml_feature_importance.empty:
+        ml_feature_importance = _read_csv(path / "ml_feature_importance.csv")
     ml_feature_importance = _clean_numeric(ml_feature_importance, ["importance"])
     if not ml_feature_importance.empty:
         ml_feature_importance = ml_feature_importance.sort_values("importance", ascending=False).reset_index(drop=True)
