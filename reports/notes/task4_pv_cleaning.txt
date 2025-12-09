@@ -1,5 +1,0 @@
-Task 4 – PV Cleaning Highlights
-- Missingness: `pv_mod1` contains 5.00% gaps (438 hourly samples) concentrated around 18:00–21:00 UTC; the longest continuous outage spans 2.0 hours. The daily/hourly heatmap (`task4_fig_missing_heatmap.png`) visualises these evening clusters, while the timeline (`task4_fig_missing_timeline.png`) confirms visible gaps.
-- Strategy comparison: simple interpolation reconnects short gaps but flattens cloudy ramps, STL seasonal reconstruction restores diurnal shape yet drifts during multi-hour outages, while KNN multivariate leverages `pv_mod2`, `pv_mod3`, irradiance, and temperature to retain realistic variability.
-- Summary metrics (see `reports/tables/task4_imputation_summary.csv`): the multivariate series preserves mean generation (0.660 kW) and variance (1.108 kW) closest to the fused PV channel while eliminating missing values.
-- Recommendation: adopt the multivariate KNN fill for downstream forecasting and control because it maintains credible ramp rates across long outages and aligns distributional properties with redundant sensors.
